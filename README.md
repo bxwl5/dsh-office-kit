@@ -16,8 +16,7 @@
 ## 📦 安装
 
 在官方插件中安装 `dsh-office-kit`
-
-<img src="https://github.com/hairyf/dsh-office-kit/raw/main/public/install.png" alt="安装插件" />
+<img src="https://raw.githubusercontent.com/hairyf/dsh-office-suite/refs/heads/main/public/install.png" alt="安装插件" />
 
 或使用命令行安装
 
@@ -43,7 +42,7 @@ dsh plugin add dsh-office-kit
 
 ### 通过菜单处理文档
 
-<img src="https://github.com/hairyf/dsh-office-kit/raw/main/public/image.png" alt="Office 菜单与文档预览" />
+<img src="https://raw.githubusercontent.com/hairyf/dsh-office-suite/refs/heads/main/public/image.png" alt="Office 菜单与文档预览" />
 
 1. 在输入框键入 `/`，选择 **文档**、**PDF 文档**、**演示文稿** 或 **电子表格**。
 2. 回车插入 Chip，描述创建、读取或修改任务。
@@ -52,7 +51,7 @@ dsh plugin add dsh-office-kit
 
 ### 在预览中请求修改
 
-| <img src="https://github.com/hairyf/dsh-office-kit/raw/main/public/annotation-selection.png" alt="段落吸附与修改要求输入" /> | <img src="https://github.com/hairyf/dsh-office-kit/raw/main/public/annotation-conversation.png" alt="注释列表与会话引用" /> |
+| <img src="https://raw.githubusercontent.com/hairyf/dsh-office-suite/refs/heads/main/public/annotation-selection.png" alt="段落吸附与修改要求输入" /> | <img src="https://raw.githubusercontent.com/hairyf/dsh-office-suite/refs/heads/main/public/annotation-conversation.png" alt="注释列表与会话引用" /> |
 | ------------- | ------------- |
 
 1. 打开 PDF 或 DOC/DOCX，点击工具栏的 **请求修改**。
