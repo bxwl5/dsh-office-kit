@@ -200,7 +200,8 @@ export function apply(ctx: Context): void {
     },
     timeoutMs: 600_000,
     async execute() {
-      const runtime = await ensureRuntime(paths.configFile)
+      // An explicit status check must never report a cached runtime that has since disappeared.
+      const runtime = await ensureRuntime(paths.configFile, true)
       const report = {
         plugin: { name, version: pluginVersion() },
         runtime: {

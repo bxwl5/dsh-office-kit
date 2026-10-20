@@ -362,18 +362,27 @@ interface RuntimeCache {
 let cache: RuntimeCache | undefined
 let healing: Promise<RuntimeStatus> | undefined
 
+/** A cached `ok` is only worth reusing while its interpreter still exists on disk. */
+export function runtimeAlive(status: RuntimeStatus): boolean {
+  return status.state !== 'ok' || (status.python != null && isFile(status.python.path))
+}
+
 /**
  * Resolve a runtime that is proven to work, self-healing via postinstall.mjs when it
  * is missing or incomplete. Never returns a bare interpreter without dependencies.
+ * Pass `force` for an explicit status check that must not trust the process cache.
  */
-export function ensureRuntime(configFile = officePaths().configFile): Promise<RuntimeStatus> {
-  if (cache != null && (cache.status.state === 'ok' || Date.now() - cache.at < FAILURE_RETRY_DELAY))
-    return Promise.resolve(cache.status)
+export function ensureRuntime(configFile = officePaths().configFile, force = false): Promise<RuntimeStatus> {
+  if (!force && cache != null) {
+    const reusable = cache.status.state === 'ok' ? runtimeAlive(cache.status) : Date.now() - cache.at < FAILURE_RETRY_DELAY
+    if (reusable)
+      return Promise.resolve(cache.status)
+  }
   healing ??= (async (): Promise<RuntimeStatus> => {
-    const fresh = await inspectRuntime(configFile)
-    if (fresh.state === 'ok') {
-      cache = { status: fresh, at: Date.now() }
-      return fresh
+    const probed = await inspectRuntime(configFile)
+    if (probed.state === 'ok') {
+      cache = { status: probed, at: Date.now() }
+      return probed
     }
     const healError = await runPostinstall()
     const after = await inspectRuntime(configFile)

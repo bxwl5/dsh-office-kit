@@ -324,20 +324,27 @@ function runPostinstall() {
 }
 let cache;
 let healing;
+/** A cached `ok` is only worth reusing while its interpreter still exists on disk. */
+function runtimeAlive(status) {
+	return status.state !== "ok" || status.python != null && isFile(status.python.path);
+}
 /**
 * Resolve a runtime that is proven to work, self-healing via postinstall.mjs when it
 * is missing or incomplete. Never returns a bare interpreter without dependencies.
+* Pass `force` for an explicit status check that must not trust the process cache.
 */
-function ensureRuntime(configFile = officePaths().configFile) {
-	if (cache != null && (cache.status.state === "ok" || Date.now() - cache.at < FAILURE_RETRY_DELAY)) return Promise.resolve(cache.status);
+function ensureRuntime(configFile = officePaths().configFile, force = false) {
+	if (!force && cache != null) {
+		if (cache.status.state === "ok" ? runtimeAlive(cache.status) : Date.now() - cache.at < FAILURE_RETRY_DELAY) return Promise.resolve(cache.status);
+	}
 	healing ??= (async () => {
-		const fresh = await inspectRuntime(configFile);
-		if (fresh.state === "ok") {
+		const probed = await inspectRuntime(configFile);
+		if (probed.state === "ok") {
 			cache = {
-				status: fresh,
+				status: probed,
 				at: Date.now()
 			};
-			return fresh;
+			return probed;
 		}
 		const healError = await runPostinstall();
 		const status = {
@@ -519,7 +526,7 @@ function apply(ctx) {
 		},
 		timeoutMs: 6e5,
 		async execute() {
-			const runtime = await ensureRuntime(paths.configFile);
+			const runtime = await ensureRuntime(paths.configFile, true);
 			const report = {
 				plugin: {
 					name,
