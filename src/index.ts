@@ -17,9 +17,9 @@ const execFileAsync = promisify(execFile)
 export const inject = ['skills', 'tools']
 
 /** Cordis plugin identity used in loader diagnostics. */
-export const name = 'dsh-office-suite'
+export const name = 'dsh-office-kit'
 
-const PROVIDER_NAME = 'dsh-office-suite'
+const PROVIDER_NAME = 'dsh-office-kit'
 
 interface ParsedSkill {
   readonly description: string
@@ -29,10 +29,10 @@ interface ParsedSkill {
 function parseSkill(raw: string, path: string): ParsedSkill {
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(raw)
   if (match?.[1] == null)
-    throw new Error(`dsh-office-suite: ${path} has no YAML frontmatter`)
+    throw new Error(`dsh-office-kit: ${path} has no YAML frontmatter`)
   const description = /^description:(.*)$/mu.exec(match[1])?.[1]?.trim()
   if (description == null || description.length === 0)
-    throw new Error(`dsh-office-suite: ${path} has no description`)
+    throw new Error(`dsh-office-kit: ${path} has no description`)
   return {
     description: description.replace(/^["']|["']$/gu, ''),
     content: raw.slice(match[0].length).trim(),
@@ -117,7 +117,7 @@ export function apply(ctx: Context): void {
     const path = join(directory, 'SKILL.md')
     if (!existsSync(path)) {
       // Registration must not fail the whole plugin because one pack is missing.
-      console.warn(`[dsh-office-suite] missing skill file: ${path}`)
+      console.warn(`[dsh-office-kit] missing skill file: ${path}`)
       continue
     }
     const candidate: SkillCandidate = {
@@ -152,7 +152,7 @@ export function apply(ctx: Context): void {
       const python = await resolvePython(paths.configFile)
       const pythonLine = python?.compatible === true
         ? `\n\n## Office runtime\n\nUse these verified absolute paths for every helper command. Quote paths that contain spaces.\n\n\`\`\`json\n${JSON.stringify({ python: python.path, cli: paths.cli, version: python.version }, null, 2)}\n\`\`\``
-        : '\n\n## Office runtime\n\nNo compatible Python was found. Ask the user to run `pnpm rebuild dsh-office-suite` (or `npm rebuild dsh-office-suite`) and check the install output before attempting file work.'
+        : '\n\n## Office runtime\n\nNo compatible Python was found. Ask the user to run `pnpm rebuild dsh-office-kit` (or `npm rebuild dsh-office-kit`) and check the install output before attempting file work.'
       const { rank: _rank, locator: _locator, ...summary } = candidate
       return {
         ...summary,

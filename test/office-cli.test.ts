@@ -14,7 +14,7 @@ const PACKAGE_ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-
 
 function configuredPython(): string | undefined {
   const candidates: (string | undefined)[] = [process.env.DSH_OFFICE_PYTHON]
-  const config = join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'dsh-office-suite', 'config.json')
+  const config = join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'dsh-office-kit', 'config.json')
   if (existsSync(config)) {
     try {
       const parsed = JSON.parse(readFileSync(config, 'utf8')) as { python?: unknown }

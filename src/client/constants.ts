@@ -1,5 +1,5 @@
 /** Locale namespace and slash source owned by this plugin. */
-export const OFFICE_NS = 'dsh-office-suite'
+export const OFFICE_NS = 'dsh-office-kit'
 export const OFFICE_SOURCE = 'office'
 export const OFFICE_CHIP = 'office'
 export const OFFICE_CHIP_SLOT = 'conversation.user.text.node'
@@ -12,7 +12,7 @@ export const ANNOTATION_PRIORITY = 100
 export const ANNOTATION_NODE = 'officeAnnotation'
 export const ANNOTATION_OPEN = '<office-annotations>'
 export const ANNOTATION_CLOSE = '</office-annotations>'
-export const OFFICE_STYLE_ID = 'dsh-office-suite/reference.css'
+export const OFFICE_STYLE_ID = 'dsh-office-kit/reference.css'
 export const FILE_ADDRESS_PREFIX = 'dsh-resource://file/'
 export const SESSION_FILE_PREFIX = `${FILE_ADDRESS_PREFIX}session/`
 

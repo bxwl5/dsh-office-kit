@@ -32,7 +32,7 @@ This file records what the plugin actually does, how each capability maps from t
 
 ## Python and renderer environment
 
-- Python: 3.12.12 in `%LOCALAPPDATA%\dsh-office-suite\venv`, created by `postinstall.mjs` from an existing CPython 3.12.12.
+- Python: 3.12.12 in `%LOCALAPPDATA%\dsh-office-kit\venv`, created by `postinstall.mjs` from an existing CPython 3.12.12.
 - Installed and import-verified: python-docx 1.2.0, openpyxl 3.1.5, python-pptx 1.0.2, pypdf 6.21.1, reportlab 4.5.1, pdfplumber 0.11.9, PyMuPDF 1.28.2, Pillow 11.3.0, latex2mathml 3.81.1, mathml2omml 0.0.2.
 - Renderers: Microsoft Word/PowerPoint/Excel 16 installed. LibreOffice is not installed on this machine. OCR (`tesseract`) and Poppler `pdftoppm` are not installed; PDF rendering uses PyMuPDF instead.
 

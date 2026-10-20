@@ -221,7 +221,7 @@ export function apply(ctx: ClientContext): void {
       return true
     }
     catch (error) {
-      console.error('[dsh-office-suite] reference preview failed:', error)
+      console.error('[dsh-office-kit] reference preview failed:', error)
       return false
     }
   }
@@ -263,7 +263,7 @@ export function apply(ctx: ClientContext): void {
           openSkill(session.sessionId, feature.id, catalog)
       }).catch((error) => {
         if (!entry.abort.signal.aborted)
-          console.error('[dsh-office-suite] reference preview failed:', error)
+          console.error('[dsh-office-kit] reference preview failed:', error)
       })
       return true
     },
@@ -356,7 +356,7 @@ export function apply(ctx: ClientContext): void {
           ctx.sidebarRight.openResource(fileAddressFor(sessionId, cwd, target))
         }
         catch (error) {
-          console.error('[dsh-office-suite] annotation preview failed:', error)
+          console.error('[dsh-office-kit] annotation preview failed:', error)
         }
       },
     }

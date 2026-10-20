@@ -95,8 +95,8 @@ const PYTHON_PACKAGES = [
 function officePaths() {
 	const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 	const home = homedir();
-	const configDir = process.platform === "win32" ? join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "dsh-office-suite") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-suite") : join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), "dsh-office-suite");
-	const dataDir = process.platform === "win32" ? join(process.env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "dsh-office-suite") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-suite") : join(process.env.XDG_DATA_HOME ?? join(home, ".local", "share"), "dsh-office-suite");
+	const configDir = process.platform === "win32" ? join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "dsh-office-kit") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-kit") : join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), "dsh-office-kit");
+	const dataDir = process.platform === "win32" ? join(process.env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "dsh-office-kit") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-kit") : join(process.env.XDG_DATA_HOME ?? join(home, ".local", "share"), "dsh-office-kit");
 	return {
 		configFile: join(configDir, "config.json"),
 		dataDir,
@@ -241,13 +241,13 @@ const execFileAsync = promisify(execFile);
 /** Services required by this host half. */
 const inject = ["skills", "tools"];
 /** Cordis plugin identity used in loader diagnostics. */
-const name = "dsh-office-suite";
-const PROVIDER_NAME = "dsh-office-suite";
+const name = "dsh-office-kit";
+const PROVIDER_NAME = "dsh-office-kit";
 function parseSkill(raw, path) {
 	const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(raw);
-	if (match?.[1] == null) throw new Error(`dsh-office-suite: ${path} has no YAML frontmatter`);
+	if (match?.[1] == null) throw new Error(`dsh-office-kit: ${path} has no YAML frontmatter`);
 	const description = /^description:(.*)$/mu.exec(match[1])?.[1]?.trim();
-	if (description == null || description.length === 0) throw new Error(`dsh-office-suite: ${path} has no description`);
+	if (description == null || description.length === 0) throw new Error(`dsh-office-kit: ${path} has no description`);
 	return {
 		description: description.replace(/^["']|["']$/gu, ""),
 		content: raw.slice(match[0].length).trim()
@@ -312,7 +312,7 @@ function apply(ctx) {
 		const directory = join(paths.skillsDir, feature.skill);
 		const path = join(directory, "SKILL.md");
 		if (!existsSync(path)) {
-			console.warn(`[dsh-office-suite] missing skill file: ${path}`);
+			console.warn(`[dsh-office-kit] missing skill file: ${path}`);
 			continue;
 		}
 		const candidate = {
@@ -355,7 +355,7 @@ function apply(ctx) {
 				python: python.path,
 				cli: paths.cli,
 				version: python.version
-			}, null, 2)}\n\`\`\`` : "\n\n## Office runtime\n\nNo compatible Python was found. Ask the user to run `pnpm rebuild dsh-office-suite` (or `npm rebuild dsh-office-suite`) and check the install output before attempting file work.";
+			}, null, 2)}\n\`\`\`` : "\n\n## Office runtime\n\nNo compatible Python was found. Ask the user to run `pnpm rebuild dsh-office-kit` (or `npm rebuild dsh-office-kit`) and check the install output before attempting file work.";
 			const { rank: _rank, locator: _locator, ...summary } = candidate;
 			return {
 				...summary,

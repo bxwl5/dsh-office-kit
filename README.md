@@ -1,4 +1,8 @@
-# dsh-office-suite
+<div align="center"><a name="readme-top"></a>
+
+<img src="./public/hero.png" alt="安装插件" />
+
+# DSH Office Kit
 
 [![npm version][npm-version-src]][npm-version-href]
 [![npm downloads][npm-downloads-src]][npm-downloads-href]
@@ -7,15 +11,18 @@
 [![License][license-src]][license-href]
 
 为 DeepSeek Harness (DSH) 提供本地 Word、PDF、演示文稿与电子表格能力，支持 `/` 菜单、引用 Chip，以及侧边栏预览中的选区标注与修改请求。
+</div>
 
 ## 📦 安装
 
-<img src="./public/install.png" alt="安装插件" />
+在官方插件中安装 `dsh-office-kit`
+
+<img src="https://github.com/hairyf/dsh-office-kit/raw/main/public/install.png" alt="安装插件" />
 
 或使用命令行安装
 
 ```sh
-dsh plugin add dsh-office-suite
+dsh plugin add dsh-office-kit
 ```
 
 - 在 **设置 → 插件** 中启用。
@@ -36,7 +43,7 @@ dsh plugin add dsh-office-suite
 
 ### 通过菜单处理文档
 
-<img src="./public/image.png" alt="Office 菜单与文档预览" />
+<img src="https://github.com/hairyf/dsh-office-kit/raw/main/public/image.png" alt="Office 菜单与文档预览" />
 
 1. 在输入框键入 `/`，选择 **文档**、**PDF 文档**、**演示文稿** 或 **电子表格**。
 2. 回车插入 Chip，描述创建、读取或修改任务。
@@ -45,7 +52,7 @@ dsh plugin add dsh-office-suite
 
 ### 在预览中请求修改
 
-| <img src="./public/annotation-selection.png" alt="段落吸附与修改要求输入" /> | <img src="./public/annotation-conversation.png" alt="注释列表与会话引用" /> |
+| <img src="https://github.com/hairyf/dsh-office-kit/raw/main/public/annotation-selection.png" alt="段落吸附与修改要求输入" /> | <img src="https://github.com/hairyf/dsh-office-kit/raw/main/public/annotation-conversation.png" alt="注释列表与会话引用" /> |
 | ------------- | ------------- |
 
 1. 打开 PDF 或 DOC/DOCX，点击工具栏的 **请求修改**。
@@ -88,13 +95,13 @@ pnpm run build
 
 <!-- Badges -->
 
-[npm-version-src]: https://img.shields.io/npm/v/dsh-office-suite?style=flat&colorA=080f12&colorB=1fa669
-[npm-version-href]: https://npmjs.com/package/dsh-office-suite
-[npm-downloads-src]: https://img.shields.io/npm/dm/dsh-office-suite?style=flat&colorA=080f12&colorB=1fa669
-[npm-downloads-href]: https://npmjs.com/package/dsh-office-suite
-[bundle-src]: https://img.shields.io/bundlephobia/minzip/dsh-office-suite?style=flat&colorA=080f12&colorB=1fa669&label=minzip
-[bundle-href]: https://bundlephobia.com/result?p=dsh-office-suite
-[license-src]: https://img.shields.io/github/license/hairyf/dsh-office-suite.svg?style=flat&colorA=080f12&colorB=1fa669
-[license-href]: https://github.com/hairyf/dsh-office-suite/blob/main/LICENSE
+[npm-version-src]: https://img.shields.io/npm/v/dsh-office-kit?style=flat&colorA=080f12&colorB=1fa669
+[npm-version-href]: https://npmjs.com/package/dsh-office-kit
+[npm-downloads-src]: https://img.shields.io/npm/dm/dsh-office-kit?style=flat&colorA=080f12&colorB=1fa669
+[npm-downloads-href]: https://npmjs.com/package/dsh-office-kit
+[bundle-src]: https://img.shields.io/bundlephobia/minzip/dsh-office-kit?style=flat&colorA=080f12&colorB=1fa669&label=minzip
+[bundle-href]: https://bundlephobia.com/result?p=dsh-office-kit
+[license-src]: https://img.shields.io/github/license/hairyf/dsh-office-kit.svg?style=flat&colorA=080f12&colorB=1fa669
+[license-href]: https://github.com/hairyf/dsh-office-kit/blob/main/LICENSE
 [jsdocs-src]: https://img.shields.io/badge/jsdocs-reference-080f12?style=flat&colorA=080f12&colorB=1fa669
-[jsdocs-href]: https://www.jsdocs.io/package/dsh-office-suite
+[jsdocs-href]: https://www.jsdocs.io/package/dsh-office-kit

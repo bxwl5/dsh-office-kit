@@ -37,15 +37,15 @@ export function officePaths(): OfficePaths {
   const packageRoot = fileURLToPath(new URL('..', import.meta.url))
   const home = homedir()
   const configDir = process.platform === 'win32'
-    ? join(process.env.APPDATA ?? join(home, 'AppData', 'Roaming'), 'dsh-office-suite')
+    ? join(process.env.APPDATA ?? join(home, 'AppData', 'Roaming'), 'dsh-office-kit')
     : process.platform === 'darwin'
-      ? join(home, 'Library', 'Application Support', 'dsh-office-suite')
-      : join(process.env.XDG_CONFIG_HOME ?? join(home, '.config'), 'dsh-office-suite')
+      ? join(home, 'Library', 'Application Support', 'dsh-office-kit')
+      : join(process.env.XDG_CONFIG_HOME ?? join(home, '.config'), 'dsh-office-kit')
   const dataDir = process.platform === 'win32'
-    ? join(process.env.LOCALAPPDATA ?? join(home, 'AppData', 'Local'), 'dsh-office-suite')
+    ? join(process.env.LOCALAPPDATA ?? join(home, 'AppData', 'Local'), 'dsh-office-kit')
     : process.platform === 'darwin'
-      ? join(home, 'Library', 'Application Support', 'dsh-office-suite')
-      : join(process.env.XDG_DATA_HOME ?? join(home, '.local', 'share'), 'dsh-office-suite')
+      ? join(home, 'Library', 'Application Support', 'dsh-office-kit')
+      : join(process.env.XDG_DATA_HOME ?? join(home, '.local', 'share'), 'dsh-office-kit')
   return {
     configFile: join(configDir, 'config.json'),
     dataDir,

@@ -1,17 +1,17 @@
 {
-  "name": "dsh-office-suite",
+  "name": "dsh-office-kit",
   "type": "module",
   "version": "0.1.0",
   "packageManager": "pnpm@11.15.1",
   "description": "Office documents, PDF, presentations, and spreadsheets for DeepSeek Harness",
   "author": "Hairy",
   "license": "MIT",
-  "homepage": "https://github.com/hairyf/dsh-office-suite#readme",
+  "homepage": "https://github.com/hairyf/dsh-office-kit#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hairyf/dsh-office-suite.git"
+    "url": "git+https://github.com/hairyf/dsh-office-kit.git"
   },
-  "bugs": "https://github.com/hairyf/dsh-office-suite/issues",
+  "bugs": "https://github.com/hairyf/dsh-office-kit/issues",
   "keywords": [
     "dsh-plugin",
     "deepseek-harness",

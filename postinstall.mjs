@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 /**
- * dsh-office-suite postinstall.
+ * dsh-office-kit postinstall.
  *
  * Ensures a compatible Python (3.10–3.13) with the Office helper libraries is
  * available. On Windows a missing Python is downloaded from python.org,
@@ -24,13 +24,13 @@ const PACKAGE_ROOT = dirname(fileURLToPath(import.meta.url))
 const IS_WINDOWS = process.platform === 'win32'
 const PYTHON_VERSION = '3.12.10'
 const PYTHON_INSTALL_DIR = join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'Programs', 'Python', 'Python312')
-const DATA_DIR = join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'dsh-office-suite')
-const CONFIG_DIR = join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), 'dsh-office-suite')
+const DATA_DIR = join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'dsh-office-kit')
+const CONFIG_DIR = join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), 'dsh-office-kit')
 const VENV_DIR = join(DATA_DIR, 'venv')
 const VENV_PYTHON = join(VENV_DIR, IS_WINDOWS ? 'Scripts/python.exe' : 'bin/python')
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
 const REQUIREMENTS = join(PACKAGE_ROOT, 'python', 'requirements.txt')
-const LOG_PREFIX = '[dsh-office-suite]'
+const LOG_PREFIX = '[dsh-office-kit]'
 
 function log(message) {
   console.log(`${LOG_PREFIX} ${message}`)

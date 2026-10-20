@@ -11,7 +11,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     }
   }
   interface LocaleNamespaceMap {
-    'dsh-office-suite': string
+    'dsh-office-kit': string
   }
 }
 
