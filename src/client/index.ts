@@ -30,6 +30,7 @@ export const inject = [
 const FILE_ADDRESS_PREFIX = 'dsh-resource://file/'
 
 const zh = {
+  'menu.group': '办公',
   'menu.documents.label': '文档',
   'menu.documents.description': '创建、读取、编辑和渲染 DOCX 文档',
   'menu.pdf.label': 'PDF 文档',
@@ -41,6 +42,7 @@ const zh = {
 } as const
 
 const en: Record<keyof typeof zh, string> = {
+  'menu.group': 'Office',
   'menu.documents.label': 'Documents',
   'menu.documents.description': 'Create, read, edit, and render DOCX documents',
   'menu.pdf.label': 'PDF documents',
@@ -191,6 +193,7 @@ export function apply(ctx: ClientContext): void {
           name: feature.command,
           label: t(`menu.${feature.id}.label`),
           description: t(`menu.${feature.id}.description`),
+          section: t('menu.group'),
           icon: Icon,
         }
       })
