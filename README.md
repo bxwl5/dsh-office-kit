@@ -15,6 +15,8 @@ The plugin ships four DSH skills and one host-side JSON CLI. It does not call Co
 
 Typing `/` opens the menu with a separate icon and friendly name for each format. Pressing Enter on a highlighted item inserts a reference chip with a stable internal id (`documents`, `pdf`, `presentations`, `spreadsheets`); the chip survives reloads and draft restore and opens the matching skill in the right sidebar when clicked. Transcripts render the same chip with the format icon.
 
+The four menu and transcript icons are from [Gravity UI Icons](https://github.com/gravity-ui/icons) (MIT); the vendored SVG files and license are in [`assets/icons`](assets/icons).
+
 The corresponding skills are `office-documents`, `office-pdf`, `office-presentations`, and `office-spreadsheets`. The `office_status` tool reports the verified Python interpreter, installed packages, helper CLI, and available renderers.
 
 ## Requirements
