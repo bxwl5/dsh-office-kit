@@ -16,6 +16,7 @@
 ## 📦 安装
 
 在官方插件中安装 `dsh-office-kit`
+
 <img src="https://raw.githubusercontent.com/hairyf/dsh-office-suite/refs/heads/main/public/install.png" alt="安装插件" />
 
 或使用命令行安装
