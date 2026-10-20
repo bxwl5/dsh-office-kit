@@ -17,7 +17,7 @@ This file records what the plugin actually does, how each capability maps from t
 | `/` menu with names and icons | Original skill menu (not `InputTrigger`) | Public `ctx.inputTriggers` source named `office`; four candidates with Gravity UI Icons SVGs and locale labels | Typecheck/build; not yet exercised in a running DSH window | Implemented, GUI interaction unverified |
 | Enter → reference chip | Original artifact reference | `onPick` returns `ReferenceInsert`; host `codec` persists `/documents` and serializes a skill instruction | Build/typecheck; chip persistence is the documented public contract, not live-tested | Implemented, GUI interaction unverified |
 | Chip preview | Original skill preview | `openReference` maps feature id → skill name → `SKILL.md` path → `sidebarRight.openResource` | Code path implemented; GUI unverified | Implemented, GUI unverified |
-| Python setup | Original bundled runtime | `postinstall.mjs` detect/download/verify/install/venv/pip/import check/config/PATH | Auto-install path not run (a working Python already existed); venv creation, dependency install, import verification, config write, idempotent rerun all verified | Supported; installer download path unverified in this environment |
+| Python setup | Original bundled runtime | Host self-heal: every skill load and `office_status` call runs `ensureRuntime`, which verifies the venv and imports all 10 packages and, when anything is missing, runs the bundled `postinstall.mjs` itself, then reports the real outcome. `postinstall.mjs` is only the fast path: reuses an existing CPython 3.10–3.13 or installs 3.12.10 to the installer's default per-user location with `AppendPath=1`, leaving PATH maintenance to the installer. | Cold self-heal from deleted venv reported `ok`; bare interpreter reported `missing-dependencies` with a runnable remedy; second run is 0.8 s | Supported; python.org download path unverified in this environment |
 
 ## Dependency mapping
 
@@ -32,28 +32,30 @@ This file records what the plugin actually does, how each capability maps from t
 
 ## Python and renderer environment
 
-- Python: 3.12.12 in `%LOCALAPPDATA%\dsh-office-kit\venv`, created by `postinstall.mjs` from an existing CPython 3.12.12.
+- Python: 3.13.12 (venv base) in `~/.dsh/office/runtime/venv` (`C:\Users\<user>\.dsh\office\runtime\venv` on Windows), created by `postinstall.mjs` or by the host self-heal from the first compatible interpreter it finds. A venv at the legacy `%LOCALAPPDATA%\dsh-office-kit\venv` is still read as a fallback but is never created.
 - Installed and import-verified: python-docx 1.2.0, openpyxl 3.1.5, python-pptx 1.0.2, pypdf 6.21.1, reportlab 4.5.1, pdfplumber 0.11.9, PyMuPDF 1.28.2, Pillow 11.3.0, latex2mathml 3.81.1, mathml2omml 0.0.2.
 - Renderers: Microsoft Word/PowerPoint/Excel 16 installed. LibreOffice is not installed on this machine. OCR (`tesseract`) and Poppler `pdftoppm` are not installed; PDF rendering uses PyMuPDF instead.
 
 ## Verification evidence
 
-Run on Windows, 2026-10-20, in paths containing Chinese characters and spaces.
+Run on Windows, 2026-10-21, in paths containing Chinese characters and spaces.
 
 | Check | Result |
 | --- | --- |
 | `pnpm run typecheck` | Passed |
 | `pnpm run build` | Passed; `dist/index.js`, `dist/index.d.ts`, `dist/client.js` generated |
-| `pnpm run test -- --run` | 14 passed across 2 files (10 in `test/office-cli.test.ts`) |
+| `pnpm run test -- --run` | 57 passed, 2 skipped across 4 files |
 | DOCX create/read/edit/render | Passed; rendered page inspected: Chinese header/title/body/table/equation/image/footer |
 | PDF create/read/edit/render | Passed; Chinese text extracted, metadata edit, page rendered |
 | PPTX create/read/edit/render | Passed; four slides rendered; table/chart/image layout fixed and inspected |
 | XLSX create/read/edit/recalc | Passed; formulas preserved; Excel recalculation produced cached values; data-only read confirmed |
-| `postinstall.mjs` first run | Passed; venv created, 10 packages installed, imports verified, config written |
-| `postinstall.mjs` second run | Passed in 2.7 s; idempotent |
-| `PATH` update | Registry write blocked by this Windows sandbox; plugin now warns instead of claiming success; absolute-path resolution works |
+| `postinstall.mjs` first run | Passed; venv created under `~/.dsh/office/runtime/venv`, 10 packages installed, imports verified, config written |
+| `postinstall.mjs` second run | Passed in 0.8 s; idempotent, no reinstall |
+| Host self-heal | Passed; with the venv deleted, `ensureRuntime` ran the bundled postinstall (31 s) and reported `runtime.state: ok`, `heal.attempted: true` |
+| Unavailable runtime reported | Passed; a bare interpreter without packages reports `missing-dependencies` (5 missing) plus `node "<abs postinstall.mjs>"`, never `ok` |
+| `PATH` handling | No plugin PATH or registry writes remain; `AppendPath=1` lets the CPython installer own PATH, so uninstalling Python cleans it up |
 | Chinese + spaces path | Used for every integration test |
-| Missing/incompatible Python | `resolvePython` reports `found: false` or `compatible: false`; skill bodies tell the agent to stop and ask for repair instead of running |
+| Missing/incompatible Python | Reported as `no-interpreter` with the remedy command; skills tell the agent to stop instead of running the CLI |
 | Interrupted installer | Download uses a unique temp filename per process; stale locked installers no longer block a retry |
 | `pnpm run lint --fix` | Passed |
 

@@ -10,7 +10,7 @@ Create, read, edit, and render local Word documents. This skill produces Office 
 
 1. Call the `office_status` tool.
 2. Use the `python` and `cli` values from the `## Office runtime` JSON block at the end of this file. These are verified absolute paths; do not assume `python` or `soffice` is on `PATH`.
-3. If the runtime block says no compatible Python was found, stop and tell the user to run the package install/rebuild step. Do not fabricate a document or claim success.
+3. If the runtime block reports that no working Python runtime is available, stop and tell the user to run the `node "..."` remedy command it names, then call `office_status` again. Do not fabricate a document or claim success.
 
 Quote every path. Windows paths and paths containing spaces, Chinese characters, or `&` are supported.
 

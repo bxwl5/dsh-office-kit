@@ -10,7 +10,7 @@ Create PDFs, extract their content, edit metadata/pages, and rasterize them for 
 
 1. Call the `office_status` tool.
 2. Use the `python` and `cli` values from the `## Office runtime` JSON block at the end of this file. They are verified absolute paths.
-3. If no compatible Python is reported, stop and tell the user how to install it. Never claim a PDF was produced when the CLI was unavailable.
+3. If the runtime block reports that no working Python runtime is available, stop and tell the user to run the `node "..."` remedy command it names, then call `office_status` again. Never claim a PDF was produced when the CLI was unavailable.
 
 ## Create
 

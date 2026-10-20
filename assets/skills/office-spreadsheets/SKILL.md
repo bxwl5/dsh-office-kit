@@ -10,7 +10,7 @@ Build local Excel workbooks with values, formulas, styles, charts, and images; i
 
 1. Call the `office_status` tool.
 2. Use the `python` and `cli` values from the `## Office runtime` JSON block at the end of this file.
-3. If no compatible Python is reported, stop and tell the user.
+3. If the runtime block reports that no working Python runtime is available, stop and tell the user to run the `node "..."` remedy command it names, then call `office_status` again. Do not report workbook results you could not verify.
 
 ## Create
 

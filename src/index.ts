@@ -1,17 +1,15 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SkillCandidate, SkillDefinition, SkillProvider } from '@deepseek-ai/dsh-skill'
-import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import type { RuntimeStatus } from './python'
+import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import process from 'node:process'
-import { promisify } from 'node:util'
+import { fileURLToPath } from 'node:url'
 import { BUNDLED_SKILL_RANK } from '@deepseek-ai/dsh-skill'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { OFFICE_FEATURES } from './features'
-import { cliExists, officePaths, PYTHON_PACKAGES, resolvePython } from './python'
-
-const execFileAsync = promisify(execFile)
+import { cliExists, ensureRuntime, officePaths } from './python'
 
 /** Services required by this host half. */
 export const inject = ['skills', 'tools']
@@ -79,32 +77,25 @@ function rendererFacts(): RendererFacts {
   }
 }
 
-const PACKAGE_PROBE = `
-import importlib, json, sys
-targets = ${JSON.stringify(PYTHON_PACKAGES)}
-out = {}
-for item in targets:
-    try:
-        module = importlib.import_module(item["importName"])
-        out[item["package"]] = {"installed": True, "version": str(getattr(module, "__version__", ""))}
-    except Exception as exc:
-        out[item["package"]] = {"installed": False, "error": f"{type(exc).__name__}: {exc}"}
-print(json.dumps({"python": sys.executable, "version": sys.version.split()[0], "packages": out}))
-`.trim()
+const PACKAGE_ROOT = fileURLToPath(new URL('..', import.meta.url))
 
-async function probePackages(python: string): Promise<unknown> {
+function pluginVersion(): string {
   try {
-    const { stdout } = await execFileAsync(python, ['-c', PACKAGE_PROBE], {
-      timeout: 30_000,
-      windowsHide: true,
-      maxBuffer: 2 * 1024 * 1024,
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
-    })
-    return JSON.parse(String(stdout).trim())
+    const parsed = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8')) as { version?: unknown }
+    return typeof parsed.version === 'string' ? parsed.version : 'unknown'
   }
-  catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) }
+  catch {
+    return 'unknown'
   }
+}
+
+/** Human-readable reason for a runtime that failed verification. */
+function runtimeReason(runtime: RuntimeStatus): string {
+  if (runtime.state === 'missing-dependencies') {
+    const names = runtime.missing.map(entry => entry.package).join(', ')
+    return `Python ${runtime.python?.version ?? ''} is installed but missing packages: ${names}`.replace('  ', ' ')
+  }
+  return 'no compatible Python 3.10–3.13 interpreter was found'
 }
 
 /** Register the four skills and a status tool, and expose the runtime paths in skill bodies. */
@@ -149,10 +140,10 @@ export function apply(ctx: Context): void {
         return undefined
       }
       const parsed = parseSkill(raw, path)
-      const python = await resolvePython(paths.configFile)
-      const pythonLine = python?.compatible === true
-        ? `\n\n## Office runtime\n\nUse these verified absolute paths for every helper command. Quote paths that contain spaces.\n\n\`\`\`json\n${JSON.stringify({ python: python.path, cli: paths.cli, version: python.version }, null, 2)}\n\`\`\``
-        : '\n\n## Office runtime\n\nNo compatible Python was found. Ask the user to run `pnpm rebuild dsh-office-kit` (or `npm rebuild dsh-office-kit`) and check the install output before attempting file work.'
+      const runtime = await ensureRuntime(paths.configFile)
+      const pythonLine = runtime.state === 'ok' && runtime.python != null
+        ? `\n\n## Office runtime\n\nUse these verified absolute paths for every helper command. Quote paths that contain spaces.\n\n\`\`\`json\n${JSON.stringify({ python: runtime.python.path, cli: paths.cli, version: runtime.python.version }, null, 2)}\n\`\`\``
+        : `\n\n## Office runtime\n\nNo working Python runtime is available: ${runtimeReason(runtime)}. Do not run helper commands or claim success. Tell the user to run \`${runtime.remedy}\`, then call \`office_status\` again.`
       const { rank: _rank, locator: _locator, ...summary } = candidate
       return {
         ...summary,
@@ -172,23 +163,29 @@ export function apply(ctx: Context): void {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: value }],
     },
-    timeoutMs: 45_000,
+    timeoutMs: 600_000,
     async execute() {
-      const python = await resolvePython(paths.configFile)
-      const seen = await (python?.compatible === true ? probePackages(python.path) : Promise.resolve(null))
+      const runtime = await ensureRuntime(paths.configFile)
       const report = {
-        plugin: { name, version: '0.1.0' },
-        python: python == null
+        plugin: { name, version: pluginVersion() },
+        runtime: {
+          state: runtime.state,
+          venv: paths.venv,
+          ...(runtime.state === 'ok' ? {} : { reason: runtimeReason(runtime), remedy: runtime.remedy }),
+          ...(runtime.error == null ? {} : { error: runtime.error }),
+          ...(runtime.heal == null ? {} : { heal: runtime.heal }),
+        },
+        python: runtime.python == null
           ? { found: false }
           : {
               found: true,
-              path: python.path,
-              version: python.version,
-              compatible: python.compatible,
-              ...(python.error == null ? {} : { error: python.error }),
+              path: runtime.python.path,
+              version: runtime.python.version,
+              compatible: runtime.python.compatible,
+              ...(runtime.python.error == null ? {} : { error: runtime.python.error }),
             },
         cli: { path: paths.cli, exists: cliExists() },
-        packages: seen,
+        packages: runtime.packages,
         renderers: rendererFacts(),
         skills: candidates.map(candidate => candidate.name),
       }

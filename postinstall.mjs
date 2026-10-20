@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 /**
- * dsh-office-kit postinstall.
+ * dsh-office-kit runtime bootstrap.
  *
  * Ensures a compatible Python (3.10–3.13) with the Office helper libraries is
- * available. On Windows a missing Python is downloaded from python.org,
- * signature-checked, installed silently into the per-user standard directory,
- * then isolated in a plugin-owned virtual environment.
+ * available. The virtual environment lives in `~/.dsh/office/runtime/venv` on
+ * every platform. On Windows a missing Python is downloaded from python.org,
+ * signature-checked and installed silently into the installer's own per-user
+ * location (AppendPath=1, no TargetDir, no manual registry edits).
  *
- * The plugin itself resolves the absolute interpreter path from its config
- * file; the user PATH is updated only as a convenience and never replaces
- * existing entries.
+ * The host half runs this file itself when the runtime is missing, so pnpm's
+ * lifecycle-script policy can never leave the plugin with a bare interpreter.
+ * The script is idempotent: a venv that already imports every dependency
+ * returns immediately. PATH is maintained by the Python installer, never here.
  */
 
 import { spawnSync } from 'node:child_process'
@@ -23,11 +25,17 @@ import { fileURLToPath } from 'node:url'
 const PACKAGE_ROOT = dirname(fileURLToPath(import.meta.url))
 const IS_WINDOWS = process.platform === 'win32'
 const PYTHON_VERSION = '3.12.10'
-const PYTHON_INSTALL_DIR = join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'Programs', 'Python', 'Python312')
-const DATA_DIR = join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'dsh-office-kit')
-const CONFIG_DIR = join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), 'dsh-office-kit')
-const VENV_DIR = join(DATA_DIR, 'venv')
+const RUNTIME_DIR = join(homedir(), '.dsh', 'office', 'runtime')
+const VENV_DIR = join(RUNTIME_DIR, 'venv')
 const VENV_PYTHON = join(VENV_DIR, IS_WINDOWS ? 'Scripts/python.exe' : 'bin/python')
+const LEGACY_DATA_DIR = IS_WINDOWS
+  ? join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'dsh-office-kit')
+  : process.platform === 'darwin'
+    ? join(homedir(), 'Library', 'Application Support', 'dsh-office-kit')
+    : join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'dsh-office-kit')
+const LEGACY_VENV_DIR = join(LEGACY_DATA_DIR, 'venv')
+const LEGACY_VENV_PYTHON = join(LEGACY_VENV_DIR, IS_WINDOWS ? 'Scripts/python.exe' : 'bin/python')
+const CONFIG_DIR = join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), 'dsh-office-kit')
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
 const REQUIREMENTS = join(PACKAGE_ROOT, 'python', 'requirements.txt')
 const LOG_PREFIX = '[dsh-office-kit]'
@@ -118,10 +126,26 @@ function findCompatiblePython() {
   }
 
   // A ready virtual environment still works even if its base interpreter was removed.
-  if (existsSync(VENV_PYTHON)) {
-    const info = pythonInfo(VENV_PYTHON)
+  for (const venvPython of [VENV_PYTHON, LEGACY_VENV_PYTHON]) {
+    if (existsSync(venvPython)) {
+      const info = pythonInfo(venvPython)
+      if (info) {
+        return { executable: venvPython, args: [], info }
+      }
+    }
+  }
+  return null
+}
+
+/** The first existing virtual environment that still runs, new layout first. */
+function workingVenv() {
+  for (const [python, directory] of [[VENV_PYTHON, VENV_DIR], [LEGACY_VENV_PYTHON, LEGACY_VENV_DIR]]) {
+    if (!existsSync(python)) {
+      continue
+    }
+    const info = pythonInfo(python)
     if (info) {
-      return { executable: VENV_PYTHON, args: [], info }
+      return { python, directory, info }
     }
   }
   return null
@@ -159,20 +183,19 @@ function verifySignature(file) {
 
 function installPython() {
   if (!IS_WINDOWS) {
-    return null
+    return false
   }
   // Unique per process: a stale installer from an interrupted run must not lock this download.
   const installer = join(tmpdir(), `python-${PYTHON_VERSION}-amd64-${process.pid}-${Date.now()}.exe`)
   const url = `https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe`
   download(url, installer)
   verifySignature(installer)
-  log(`installing Python ${PYTHON_VERSION} into ${PYTHON_INSTALL_DIR}`)
+  log(`installing Python ${PYTHON_VERSION} into the installer default per-user location`)
   const args = [
     '/quiet',
     'InstallAllUsers=0',
-    `TargetDir=${PYTHON_INSTALL_DIR}`,
-    'PrependPath=0',
-    'Include_launcher=0',
+    'AppendPath=1',
+    'CompileAll=0',
     'Include_test=0',
     'Include_doc=0',
     'Include_pip=1',
@@ -183,17 +206,16 @@ function installPython() {
   if (result.status !== 0) {
     throw new Error(`Python installer exited with status ${result.status}`)
   }
-  const target = join(PYTHON_INSTALL_DIR, 'python.exe')
-  if (!existsSync(target)) {
-    throw new Error(`Python installer finished but ${target} is missing`)
-  }
-  return target
+  return true
 }
 
 function ensureVenv(base) {
-  const existing = pythonInfo(VENV_PYTHON)
+  const existing = workingVenv()
   if (existing) {
-    return existing
+    if (existing.directory === LEGACY_VENV_DIR) {
+      log(`using the existing virtual environment at ${LEGACY_VENV_DIR} (legacy layout)`)
+    }
+    return existing.python
   }
   if (existsSync(VENV_DIR)) {
     warn(`replacing incomplete virtual environment at ${VENV_DIR}`)
@@ -209,15 +231,15 @@ function ensureVenv(base) {
   if (!info) {
     throw new Error('virtual environment interpreter is not executable')
   }
-  return info
+  return VENV_PYTHON
 }
 
-function installRequirements() {
+function installRequirements(python) {
   if (!existsSync(REQUIREMENTS)) {
     throw new Error(`requirements file missing: ${REQUIREMENTS}`)
   }
   log('installing Python packages (this may take a few minutes)')
-  const result = spawnSync(VENV_PYTHON, ['-m', 'pip', 'install', '--disable-pip-version-check', '--no-input', '--upgrade', '-r', REQUIREMENTS], {
+  const result = spawnSync(python, ['-m', 'pip', 'install', '--disable-pip-version-check', '--no-input', '--upgrade', '-r', REQUIREMENTS], {
     stdio: 'inherit',
     timeout: 30 * 60 * 1000,
   })
@@ -226,10 +248,10 @@ function installRequirements() {
   }
 }
 
-function verifyImports() {
+function verifyImports(python) {
   const modules = ['docx', 'openpyxl', 'pptx', 'pypdf', 'reportlab', 'pdfplumber', 'pymupdf', 'PIL', 'latex2mathml', 'mathml2omml']
   const script = `import importlib, json\nmissing = []\nfor name in ${JSON.stringify(modules)}:\n    try:\n        importlib.import_module(name)\n    except Exception as exc:\n        missing.append({"module": name, "error": f"{type(exc).__name__}: {exc}"})\nprint(json.dumps({"ok": not missing, "missing": missing}))`
-  const result = spawnSync(VENV_PYTHON, ['-c', script], { encoding: 'utf8', timeout: 120000 })
+  const result = spawnSync(python, ['-c', script], { encoding: 'utf8', timeout: 120000 })
   if (result.status !== 0) {
     throw new Error(`import verification failed: ${(result.stderr || '').trim()}`)
   }
@@ -257,31 +279,17 @@ function writeConfig(config) {
   writeFileSync(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, 'utf8')
 }
 
-function addToUserPath(entries) {
-  if (!IS_WINDOWS) {
-    return
-  }
-  const script = [
-    '$key = "HKCU:\\Environment"',
-    '$item = Get-Item $key',
-    '$current = [string]$item.GetValue("Path", "", "DoNotExpandEnvironmentNames")',
-    '$parts = @($current -split ";" | Where-Object { $_ -ne "" })',
-    '$changed = $false',
-    'foreach ($entry in ($env:DSH_PATH_ENTRIES -split ";")) { if ($entry -and ($parts -notcontains $entry)) { $parts += $entry; $changed = $true } }',
-    'if ($changed) { try { $item.SetValue("Path", ($parts -join ";"), "ExpandString"); Write-Output "updated" } catch { Write-Output "failed: $($_.Exception.Message)"; exit 3 } } else { Write-Output "unchanged" }',
-  ].join('; ')
-  const result = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
-    encoding: 'utf8',
-    env: { ...process.env, DSH_PATH_ENTRIES: entries.join(';') },
-    timeout: 60000,
+function writeReadyConfig(existingConfig, python, basePython, report) {
+  const info = pythonInfo(python)
+  writeConfig({
+    ...existingConfig,
+    python,
+    ...(basePython ? { basePython } : {}),
+    ...(info ? { pythonVersion: info.version.join('.') } : {}),
+    pluginVersion: readPackageVersion(),
+    updatedAt: new Date().toISOString(),
+    imports: report,
   })
-  if (result.status !== 0) {
-    warn(`could not update the user PATH: ${(result.stdout || result.stderr || '').trim()}`)
-    warn('The plugin still resolves the verified interpreter by absolute path; reopen the terminal only after a successful PATH update.')
-  }
-  else {
-    log(`user PATH ${(result.stdout || '').trim()}`)
-  }
 }
 
 function main() {
@@ -295,17 +303,31 @@ function main() {
   }
 
   const existingConfig = readConfig()
-  let base = findCompatiblePython()
 
+  // Fast path: an installed venv that already imports everything needs no network and no pip.
+  const ready = workingVenv()
+  if (ready) {
+    try {
+      const report = verifyImports(ready.python)
+      writeReadyConfig(existingConfig, ready.python, existingConfig.basePython, report)
+      log('Python environment is ready.')
+      log(`interpreter: ${ready.python}`)
+      return
+    }
+    catch (error) {
+      warn(`existing virtual environment needs repair: ${error.message}`)
+    }
+  }
+
+  let base = findCompatiblePython()
   if (!base) {
     if (!IS_WINDOWS) {
       warn('no compatible Python 3.10–3.13 was found. Install one and rerun `node postinstall.mjs`.')
+      process.exitCode = 1
       return
     }
     try {
-      const installed = installPython()
-      const info = installed ? pythonInfo(installed) : null
-      base = installed && info ? { executable: installed, args: [], info } : null
+      installPython()
     }
     catch (error) {
       warn(`automatic Python installation failed: ${error.message}`)
@@ -313,34 +335,22 @@ function main() {
       process.exitCode = 1
       return
     }
-  }
-
-  if (!base) {
-    warn('no compatible Python interpreter could be established.')
-    process.exitCode = 1
-    return
+    base = findCompatiblePython()
+    if (!base) {
+      warn('the Python installer finished but no compatible interpreter was found in the default per-user location.')
+      process.exitCode = 1
+      return
+    }
   }
 
   log(`using Python ${base.info.version.join('.')} at ${base.info.executable}`)
   try {
-    ensureVenv(base)
-    installRequirements()
-    const report = verifyImports()
-    const config = {
-      ...existingConfig,
-      python: VENV_PYTHON,
-      basePython: base.info.executable,
-      pythonVersion: base.info.version.join('.'),
-      pluginVersion: readPackageVersion(),
-      updatedAt: new Date().toISOString(),
-      imports: report,
-    }
-    writeConfig(config)
-    const pathEntries = IS_WINDOWS ? [dirname(base.info.executable), join(dirname(base.info.executable), 'Scripts')] : []
-    addToUserPath(pathEntries)
+    const python = ensureVenv(base)
+    installRequirements(python)
+    const report = verifyImports(python)
+    writeReadyConfig(existingConfig, python, base.info.executable, report)
     log('Python environment is ready.')
-    log(`interpreter: ${VENV_PYTHON}`)
-    log('Open a new terminal for PATH changes to apply to new shells.')
+    log(`interpreter: ${python}`)
   }
   catch (error) {
     warn(`Python environment setup failed: ${error.message}`)

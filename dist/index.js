@@ -1,13 +1,12 @@
-import { execFile } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
-import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { BUNDLED_SKILL_RANK } from "@deepseek-ai/dsh-skill";
 import { defineTool } from "@deepseek-ai/dsh-tools";
+import { execFile } from "node:child_process";
 import { homedir } from "node:os";
-import { fileURLToPath } from "node:url";
 //#region src/features.ts
 /** The four entries, in menu order. */
 const OFFICE_FEATURES = [
@@ -91,18 +90,34 @@ const PYTHON_PACKAGES = [
 		package: "mathml2omml"
 	}
 ];
+const PACKAGE_ROOT$1 = fileURLToPath(new URL("..", import.meta.url));
+const POSTINSTALL_SCRIPT = join(PACKAGE_ROOT$1, "postinstall.mjs");
+/** Upper bound for one self-heal run; the remedy command remains available afterwards. */
+const POSTINSTALL_TIMEOUT = 540 * 1e3;
+/** Failed probes are retried after this delay instead of re-running pip on every status call. */
+const FAILURE_RETRY_DELAY = 300 * 1e3;
+function configDir() {
+	const home = homedir();
+	return process.platform === "win32" ? join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "dsh-office-kit") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-kit") : join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), "dsh-office-kit");
+}
+function legacyDataDir() {
+	const home = homedir();
+	return process.platform === "win32" ? join(process.env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "dsh-office-kit") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-kit") : join(process.env.XDG_DATA_HOME ?? join(home, ".local", "share"), "dsh-office-kit");
+}
 /** Resolve per-OS config/data directories and bundled resources. */
 function officePaths() {
-	const packageRoot = fileURLToPath(new URL("..", import.meta.url));
-	const home = homedir();
-	const configDir = process.platform === "win32" ? join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "dsh-office-kit") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-kit") : join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), "dsh-office-kit");
-	const dataDir = process.platform === "win32" ? join(process.env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "dsh-office-kit") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-kit") : join(process.env.XDG_DATA_HOME ?? join(home, ".local", "share"), "dsh-office-kit");
+	const runtimeDir = join(homedir(), ".dsh", "office", "runtime");
 	return {
-		configFile: join(configDir, "config.json"),
-		dataDir,
-		cli: join(packageRoot, "python", "office_cli.py"),
-		skillsDir: join(packageRoot, "assets", "skills")
+		configFile: join(configDir(), "config.json"),
+		venv: join(runtimeDir, "venv"),
+		legacyVenv: join(legacyDataDir(), "venv"),
+		cli: join(PACKAGE_ROOT$1, "python", "office_cli.py"),
+		skillsDir: join(PACKAGE_ROOT$1, "assets", "skills")
 	};
+}
+/** One-liner the user can run to repair the runtime without pnpm. */
+function runtimeRemedy() {
+	return `node "${POSTINSTALL_SCRIPT}"`;
 }
 function isFile(path) {
 	try {
@@ -130,34 +145,68 @@ function run(file, args, timeout = 15e3) {
 		}).stdin?.end();
 	});
 }
-const VERSION_SCRIPT = "import json,sys;print(json.dumps({\"version\":sys.version.split()[0],\"executable\":sys.executable}))";
-/** Inspect an absolute interpreter without trusting its path alone. */
-async function inspectPython(path) {
-	try {
-		const raw = await run(path, ["-c", VERSION_SCRIPT]);
-		const parsed = JSON.parse(raw);
-		if (typeof parsed.version !== "string" || typeof parsed.executable !== "string") throw new Error("unexpected interpreter response");
-		const [majorText, minorText] = parsed.version.split(".");
-		const major = Number(majorText);
-		const minor = Number(minorText);
-		const compatible = major === 3 && minor >= 10 && minor < 14;
-		return {
-			path: parsed.executable,
-			version: parsed.version,
-			major,
-			minor,
-			compatible
-		};
-	} catch (error) {
-		return {
-			path,
-			version: "",
-			major: 0,
-			minor: 0,
-			compatible: false,
-			error: error instanceof Error ? error.message : String(error)
-		};
-	}
+const RUNTIME_SCRIPT = `
+import importlib, json, sys
+targets = ${JSON.stringify(PYTHON_PACKAGES)}
+packages = {}
+for item in targets:
+    try:
+        module = importlib.import_module(item["importName"])
+        packages[item["package"]] = {"installed": True, "version": str(getattr(module, "__version__", ""))}
+    except Exception as exc:
+        packages[item["package"]] = {"installed": False, "error": f"{type(exc).__name__}: {exc}"}
+print(json.dumps({"python": sys.executable, "version": sys.version.split()[0], "packages": packages}))
+`.trim();
+/** Inspect an absolute interpreter: version plus every required import. */
+function inspectPython(path) {
+	return run(path, ["-c", RUNTIME_SCRIPT], 6e4).then((raw) => {
+		try {
+			const parsed = JSON.parse(raw);
+			if (typeof parsed.version !== "string" || typeof parsed.python !== "string") throw new Error("unexpected interpreter response");
+			const [majorText, minorText] = parsed.version.split(".");
+			const major = Number(majorText);
+			const minor = Number(minorText);
+			const incompatible = major !== 3 || minor < 10 || minor >= 14;
+			const packages = PYTHON_PACKAGES.map(({ importName, package: name }) => {
+				const entry = parsed.packages?.[name];
+				return {
+					package: name,
+					importName,
+					installed: entry?.installed === true,
+					...typeof entry?.version === "string" && entry.version.length > 0 ? { version: entry.version } : {},
+					...typeof entry?.error === "string" && entry.error.length > 0 ? { error: entry.error } : {}
+				};
+			});
+			const missing = packages.filter((entry) => !entry.installed);
+			const inspection = {
+				path: parsed.python,
+				version: parsed.version,
+				major,
+				minor,
+				compatible: !incompatible,
+				packages,
+				missing: incompatible ? [] : missing
+			};
+			return incompatible ? {
+				...inspection,
+				error: `unsupported Python ${parsed.version}`
+			} : inspection;
+		} catch (error) {
+			return failedInspection(path, error);
+		}
+	}, (error) => failedInspection(path, error));
+}
+function failedInspection(path, error) {
+	return {
+		path,
+		version: "",
+		major: 0,
+		minor: 0,
+		compatible: false,
+		packages: [],
+		missing: [],
+		error: error instanceof Error ? error.message : String(error)
+	};
 }
 /** Read the interpreter path postinstall recorded; malformed files are ignored. */
 function savedPython(configFile) {
@@ -169,14 +218,16 @@ function savedPython(configFile) {
 		return;
 	}
 }
-/** PATH-independent candidate list, most specific first. */
+/** PATH-independent candidate list, plugin-owned interpreters first. */
 function candidates(configFile) {
+	const paths = officePaths();
 	const found = [];
 	const env = process.env.DSH_OFFICE_PYTHON;
 	if (env != null && env.length > 0) found.push(env);
 	const saved = savedPython(configFile);
 	if (saved != null) found.push(saved);
-	const marker = join(fileURLToPath(new URL("..", import.meta.url)), ".python-path");
+	found.push(paths.venv, paths.legacyVenv);
+	const marker = join(PACKAGE_ROOT$1, ".python-path");
 	if (isFile(marker)) {
 		const text = readFileSync(marker, "utf8").trim();
 		if (text.length > 0) found.push(text);
@@ -220,16 +271,91 @@ async function launcherInterpreters() {
 		return [];
 	}
 }
-/** Find the first runnable, compatible interpreter; return the best attempt otherwise. */
-async function resolvePython(configFile = officePaths().configFile) {
+function statusOf(python) {
+	return {
+		state: python.compatible && python.missing.length === 0 ? "ok" : "missing-dependencies",
+		python,
+		packages: python.packages,
+		missing: python.missing,
+		remedy: runtimeRemedy()
+	};
+}
+/** Inspect every candidate; return the first interpreter that proves it has all dependencies. */
+async function inspectRuntime(configFile = officePaths().configFile) {
+	let compatible;
 	let last;
 	for (const candidate of [...candidates(configFile), ...await launcherInterpreters()]) for (const expanded of await expandLauncher(candidate)) {
 		if (expanded !== candidate && !isFile(expanded)) continue;
 		const inspection = await inspectPython(expanded);
-		if (inspection.compatible) return inspection;
+		if (inspection.compatible && inspection.missing.length === 0) return statusOf(inspection);
+		if (inspection.compatible && compatible == null) compatible = inspection;
 		last = inspection;
 	}
-	return last;
+	if (compatible != null) return statusOf(compatible);
+	return {
+		state: "no-interpreter",
+		packages: [],
+		missing: [],
+		remedy: runtimeRemedy(),
+		...last?.error == null ? {} : { error: last.error }
+	};
+}
+/** Run postinstall.mjs as a child process; resolve with an error summary or undefined. */
+function runPostinstall() {
+	return new Promise((resolve) => {
+		execFile(process.execPath, [POSTINSTALL_SCRIPT], {
+			timeout: POSTINSTALL_TIMEOUT,
+			windowsHide: true,
+			maxBuffer: 8 * 1024 * 1024,
+			env: {
+				...process.env,
+				ELECTRON_RUN_AS_NODE: "1",
+				DSH_OFFICE_POSTINSTALL: "1"
+			}
+		}, (error, stdout, stderr) => {
+			if (error == null) {
+				resolve(void 0);
+				return;
+			}
+			const detail = String(stderr || stdout || error.message).trim().split(/\r?\n/u).slice(-6).join("\n");
+			resolve(detail.length > 0 ? detail : error.message);
+		});
+	});
+}
+let cache;
+let healing;
+/**
+* Resolve a runtime that is proven to work, self-healing via postinstall.mjs when it
+* is missing or incomplete. Never returns a bare interpreter without dependencies.
+*/
+function ensureRuntime(configFile = officePaths().configFile) {
+	if (cache != null && (cache.status.state === "ok" || Date.now() - cache.at < FAILURE_RETRY_DELAY)) return Promise.resolve(cache.status);
+	healing ??= (async () => {
+		const fresh = await inspectRuntime(configFile);
+		if (fresh.state === "ok") {
+			cache = {
+				status: fresh,
+				at: Date.now()
+			};
+			return fresh;
+		}
+		const healError = await runPostinstall();
+		const status = {
+			...await inspectRuntime(configFile),
+			heal: {
+				attempted: true,
+				...healError == null ? {} : { error: healError }
+			}
+		};
+		cache = {
+			status,
+			at: Date.now()
+		};
+		return status;
+	})().finally(() => {
+		healing = void 0;
+	});
+	return healing;
 }
 /** Whether the helper CLI file shipped with this package. */
 function cliExists() {
@@ -237,7 +363,6 @@ function cliExists() {
 }
 //#endregion
 //#region src/index.ts
-const execFileAsync = promisify(execFile);
 /** Services required by this host half. */
 const inject = ["skills", "tools"];
 /** Cordis plugin identity used in loader diagnostics. */
@@ -276,33 +401,22 @@ function rendererFacts() {
 		}
 	};
 }
-const PACKAGE_PROBE = `
-import importlib, json, sys
-targets = ${JSON.stringify(PYTHON_PACKAGES)}
-out = {}
-for item in targets:
-    try:
-        module = importlib.import_module(item["importName"])
-        out[item["package"]] = {"installed": True, "version": str(getattr(module, "__version__", ""))}
-    except Exception as exc:
-        out[item["package"]] = {"installed": False, "error": f"{type(exc).__name__}: {exc}"}
-print(json.dumps({"python": sys.executable, "version": sys.version.split()[0], "packages": out}))
-`.trim();
-async function probePackages(python) {
+const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
+function pluginVersion() {
 	try {
-		const { stdout } = await execFileAsync(python, ["-c", PACKAGE_PROBE], {
-			timeout: 3e4,
-			windowsHide: true,
-			maxBuffer: 2 * 1024 * 1024,
-			env: {
-				...process.env,
-				PYTHONIOENCODING: "utf-8"
-			}
-		});
-		return JSON.parse(String(stdout).trim());
-	} catch (error) {
-		return { error: error instanceof Error ? error.message : String(error) };
+		const parsed = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8"));
+		return typeof parsed.version === "string" ? parsed.version : "unknown";
+	} catch {
+		return "unknown";
 	}
+}
+/** Human-readable reason for a runtime that failed verification. */
+function runtimeReason(runtime) {
+	if (runtime.state === "missing-dependencies") {
+		const names = runtime.missing.map((entry) => entry.package).join(", ");
+		return `Python ${runtime.python?.version ?? ""} is installed but missing packages: ${names}`.replace("  ", " ");
+	}
+	return "no compatible Python 3.10–3.13 interpreter was found";
 }
 /** Register the four skills and a status tool, and expose the runtime paths in skill bodies. */
 function apply(ctx) {
@@ -350,12 +464,12 @@ function apply(ctx) {
 				return;
 			}
 			const parsed = parseSkill(raw, path);
-			const python = await resolvePython(paths.configFile);
-			const pythonLine = python?.compatible === true ? `\n\n## Office runtime\n\nUse these verified absolute paths for every helper command. Quote paths that contain spaces.\n\n\`\`\`json\n${JSON.stringify({
-				python: python.path,
+			const runtime = await ensureRuntime(paths.configFile);
+			const pythonLine = runtime.state === "ok" && runtime.python != null ? `\n\n## Office runtime\n\nUse these verified absolute paths for every helper command. Quote paths that contain spaces.\n\n\`\`\`json\n${JSON.stringify({
+				python: runtime.python.path,
 				cli: paths.cli,
-				version: python.version
-			}, null, 2)}\n\`\`\`` : "\n\n## Office runtime\n\nNo compatible Python was found. Ask the user to run `pnpm rebuild dsh-office-kit` (or `npm rebuild dsh-office-kit`) and check the install output before attempting file work.";
+				version: runtime.python.version
+			}, null, 2)}\n\`\`\`` : `\n\n## Office runtime\n\nNo working Python runtime is available: ${runtimeReason(runtime)}. Do not run helper commands or claim success. Tell the user to run \`${runtime.remedy}\`, then call \`office_status\` again.`;
 			const { rank: _rank, locator: _locator, ...summary } = candidate;
 			return {
 				...summary,
@@ -376,27 +490,36 @@ function apply(ctx) {
 				text: value
 			}]
 		},
-		timeoutMs: 45e3,
+		timeoutMs: 6e5,
 		async execute() {
-			const python = await resolvePython(paths.configFile);
-			const seen = await (python?.compatible === true ? probePackages(python.path) : Promise.resolve(null));
+			const runtime = await ensureRuntime(paths.configFile);
 			const report = {
 				plugin: {
 					name,
-					version: "0.1.0"
+					version: pluginVersion()
 				},
-				python: python == null ? { found: false } : {
+				runtime: {
+					state: runtime.state,
+					venv: paths.venv,
+					...runtime.state === "ok" ? {} : {
+						reason: runtimeReason(runtime),
+						remedy: runtime.remedy
+					},
+					...runtime.error == null ? {} : { error: runtime.error },
+					...runtime.heal == null ? {} : { heal: runtime.heal }
+				},
+				python: runtime.python == null ? { found: false } : {
 					found: true,
-					path: python.path,
-					version: python.version,
-					compatible: python.compatible,
-					...python.error == null ? {} : { error: python.error }
+					path: runtime.python.path,
+					version: runtime.python.version,
+					compatible: runtime.python.compatible,
+					...runtime.python.error == null ? {} : { error: runtime.python.error }
 				},
 				cli: {
 					path: paths.cli,
 					exists: cliExists()
 				},
-				packages: seen,
+				packages: runtime.packages,
 				renderers: rendererFacts(),
 				skills: candidates.map((candidate) => candidate.name)
 			};
