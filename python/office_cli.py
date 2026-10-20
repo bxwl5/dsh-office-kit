@@ -594,6 +594,9 @@ def _pdf_font() -> str:
         r"C:\Windows\Fonts\simsun.ttc",
         "/System/Library/Fonts/PingFang.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/truetype/arphic/uming.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
     for candidate in candidates:
@@ -603,7 +606,13 @@ def _pdf_font() -> str:
                 return "OfficeCJK"
             except Exception:
                 continue
-    return "Helvetica"
+    try:
+        from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+
+        pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+        return "STSong-Light"
+    except Exception:
+        return "Helvetica"
 
 
 def _pdf_flowables(blocks: Iterable[dict[str, Any]], font: str, counters: dict[str, int]):
