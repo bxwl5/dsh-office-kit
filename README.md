@@ -1,69 +1,59 @@
 # dsh-office-suite
 
-Office file work for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): Word documents, PDFs, PowerPoint decks, and Excel workbooks, driven from a `/` command and a reusable input chip.
+[![CI][ci-src]][ci-href]
+[![DSH][dsh-src]][dsh-href]
+[![License][license-src]][license-href]
 
-The plugin ships four DSH skills and one host-side JSON CLI. It does not call Codex, another agent, or an online Office service. Files are created and edited locally through documented Python libraries.
+为 DeepSeek Harness (DSH) 提供本地 Office 文档能力：Word、PDF、演示文稿与电子表格，通过 `/` 菜单和引用 Chip 驱动。
 
-## Features
+* **系统要求**：DSH $\ge$ `0.2.1-rc.2`；Node.js $\ge$ `20`；Python `3.10`–`3.13`。
 
-| Command | Format | Create / read / edit | Render to images | Other |
+---
+
+## 能力
+
+| 命令 | 格式 | 创建 / 读取 / 编辑 | 渲染 | 其他 |
 | --- | --- | --- | --- | --- |
-| `/documents` | DOCX | Yes | Word, LibreOffice | tables, images, equations, headers/footers |
-| `/pdf` | PDF | Yes | PyMuPDF | merge, rotate, remove pages, metadata |
-| `/presentations` | PPTX | Yes | PowerPoint, LibreOffice | text, bullets, tables, charts, images |
-| `/spreadsheets` | XLSX | Yes | Excel, LibreOffice | formulas, styles, charts, frozen panes, recalculation |
+| `/documents` | DOCX | 支持 | Word、LibreOffice | 表格、图片、公式、页眉页脚 |
+| `/pdf` | PDF | 支持 | PyMuPDF | 合并、旋转、删页、元数据 |
+| `/presentations` | PPTX | 支持 | PowerPoint、LibreOffice | 文本、项目符号、表格、图表、图片 |
+| `/spreadsheets` | XLSX | 支持 | Excel、LibreOffice | 公式、样式、图表、冻结窗格、重算 |
 
-Typing `/` opens the menu with a separate icon and friendly name for each format. Pressing Enter on a highlighted item inserts a reference chip with a stable internal id (`documents`, `pdf`, `presentations`, `spreadsheets`); the chip survives reloads and draft restore and opens the matching skill in the right sidebar when clicked. Transcripts render the same chip with the format icon.
+输入 `/` 打开「办公」菜单，每项都有独立图标和友好名称。回车插入引用 Chip，内部标识为 `documents`、`pdf`、`presentations`、`spreadsheets`，支持草稿持久化与会话恢复；点击 Chip 在右侧边栏打开对应技能，历史消息中显示同款格式图标。
 
-The four menu and transcript icons are from [Gravity UI Icons](https://github.com/gravity-ui/icons) (MIT); the vendored SVG files and license are in [`assets/icons`](assets/icons).
+插件包含四个技能 `office-documents`、`office-pdf`、`office-presentations`、`office-spreadsheets`，以及宿主工具 `office_status`（报告已验证的 Python、依赖包、CLI 与可用渲染器）。
 
-The corresponding skills are `office-documents`, `office-pdf`, `office-presentations`, and `office-spreadsheets`. The `office_status` tool reports the verified Python interpreter, installed packages, helper CLI, and available renderers.
+菜单与 Chip 图标来自 [Gravity UI Icons](https://github.com/gravity-ui/icons)（MIT），SVG 与许可证见 [`assets/icons`](assets/icons)。
 
-## Requirements
+---
 
-- DeepSeek Harness `0.2.1-rc.2` (the version this plugin is built and tested against).
-- Node.js 20 or newer.
-- Python 3.10–3.13 with the packages in [`python/requirements.txt`](python/requirements.txt). Python 3.14 is rejected because some dependencies do not publish compatible wheels yet.
-- A renderer for visual verification: Microsoft Office (Word/PowerPoint/Excel) on Windows, or LibreOffice on any platform. Without one, `render` returns an explicit error instead of a fake success.
-
-On Windows the `postinstall` script detects Python. If none is installed it downloads the official Python 3.12.10 installer from python.org, verifies its Authenticode signature, installs it per-user into `%LOCALAPPDATA%\Programs\Python\Python312`, creates a virtual environment at `%LOCALAPPDATA%\dsh-office-suite\venv`, installs the requirements, verifies every import, and records the absolute interpreter path. On macOS and Linux it verifies an existing Python but does not download one.
-
-## Install
-
-From npm (after the package is published):
+## 安装
 
 ```bash
+# npm 发布后
 dsh plugin add dsh-office-suite
-```
 
-From a local checkout:
-
-```bash
+# 或本地目录
 dsh plugin add /absolute/path/to/dsh-office-suite
 ```
 
-Enable the plugin in **Settings → Plugins**. The package's `postinstall` runs during installation. To rebuild the Python environment later:
+安装后在 **设置 → 插件** 中启用。`postinstall` 会检测 Python：
 
-```bash
-pnpm rebuild dsh-office-suite
-# or: npm rebuild dsh-office-suite
-```
+* Windows 上没有兼容 Python 时，下载官方 Python 3.12.10，校验 Authenticode 签名，安装到 `%LOCALAPPDATA%\Programs\Python\Python312`，再创建独立 venv 并验证全部依赖导入。
+* macOS / Linux 只验证现有 Python，不自动下载。
+* 跳过：`DSH_OFFICE_SKIP_POSTINSTALL=1`；CI 强制：`DSH_OFFICE_POSTINSTALL=1`；重建：`pnpm rebuild dsh-office-suite`。
 
-Set `DSH_OFFICE_SKIP_POSTINSTALL=1` to skip setup, or `DSH_OFFICE_POSTINSTALL=1` to force it in CI.
+若受限环境无法写入用户 `PATH`，安装器会明确告警，不会假报成功。宿主和技能读取配置中的解释器绝对路径，不依赖 `PATH`。
 
-If the installer could not update the user `PATH` (for example under a restricted Windows sandbox), it prints a warning instead of claiming success. The host and skills do not depend on `PATH`: they read the verified absolute interpreter path from the config file. Reopen the terminal only after a successful `PATH` update.
+---
 
-## Use
+## 使用
 
-1. Type `/` in the composer and choose **Documents**, **PDF**, **Presentations**, or **Spreadsheets**.
-2. Press Enter to insert the chip, then describe the work.
-3. The agent calls `office_status`, loads the matching skill, writes a JSON spec, invokes the bundled CLI with the absolute Python path, and inspects rendered PNGs when a renderer is available.
+1. 在输入框键入 `/`，选择 **文档**、**PDF 文档**、**演示文稿** 或 **电子表格**。
+2. 回车插入 Chip，然后描述任务。
+3. Agent 调用 `office_status`，加载对应技能，写 JSON spec，用绝对路径 Python 调用内置 CLI；有渲染器时渲染 PNG 并做视觉检查。
 
-Ask for a render when layout matters: the skills require visual inspection rather than assuming a file is correct because it was written.
-
-### Direct CLI use
-
-`office_status` returns paths; the CLI accepts JSON specs and prints JSON:
+### 直接使用 CLI
 
 ```bash
 "C:\path\to\python.exe" "C:\path\to\office_cli.py" docx create \
@@ -73,24 +63,27 @@ Ask for a render when layout matters: the skills require visual inspection rathe
   --input workbook.xlsx --data-only
 ```
 
-Commands: `status`; `docx|pdf|pptx|xlsx create|read|edit|render`; `xlsx recalc`. Flags: `--spec`, `--out`, `--input`, `--out-dir`, `--dpi`, `--json-out`, `--data-only`.
+命令：`status`；`docx|pdf|pptx|xlsx create|read|edit|render`；`xlsx recalc`。参数：`--spec`、`--out`、`--input`、`--out-dir`、`--dpi`、`--json-out`、`--data-only`。spec 与编辑结构见 [`assets/skills`](assets/skills) 和 [CAPABILITY.md](CAPABILITY.md)。
 
-Spec and edit shapes are documented in the skills under [`assets/skills`](assets/skills) and summarized in [CAPABILITY.md](CAPABILITY.md).
+---
 
-## Configuration
+## 配置
 
-- Config: `%APPDATA%\dsh-office-suite\config.json` (Windows), `~/Library/Application Support/dsh-office-suite/config.json` (macOS), `$XDG_CONFIG_HOME/dsh-office-suite/config.json` (Linux).
-- `DSH_OFFICE_PYTHON` overrides interpreter discovery for both the host and `postinstall`.
+* 配置：`%APPDATA%\dsh-office-suite\config.json`（Windows）、`~/Library/Application Support/dsh-office-suite/config.json`（macOS）、`$XDG_CONFIG_HOME/dsh-office-suite/config.json`（Linux）。
+* `DSH_OFFICE_PYTHON` 可覆盖宿主与 `postinstall` 的解释器发现。
+* 配置记录 `python`、`basePython`、`pythonVersion`、`pluginVersion`、`updatedAt` 与导入校验结果；损坏的配置会被跳过并回退到自动发现。
 
-The config records `python`, `basePython`, `pythonVersion`, `pluginVersion`, `updatedAt`, and the import verification result. A missing or malformed config falls back to normal discovery; a config pointing at a broken interpreter is skipped.
+---
 
-## Honest limits
+## 已知限制
 
-This plugin does not implement Google Docs, Google Slides, Google Sheets, or any remote editing. It does not bundle the Codex `@oai/artifact-tool` runtime. It does not provide OCR, PDF forms filling or signing, DOCX comments/tracked changes/TOC/watermarks, PPTX animations/notes/templates, or XLSX pivots/macros/data validation/conditional formatting. Attempting to use a local file as if it were a remote document is not supported.
+不支持 Google Docs / Slides / Sheets 或任何远程编辑；不内置 Codex `@oai/artifact-tool`；不提供 OCR、PDF 表单填写/签名、DOCX 批注/修订/目录/水印、PPTX 动画/备注/模板、XLSX 数据透视表/宏/数据验证/条件格式。
 
-See [CAPABILITY.md](CAPABILITY.md) for the capability trace, test evidence, and the complete unsupported list.
+本地文件不会被冒充为远程文档。完整能力追踪与未支持清单见 [CAPABILITY.md](CAPABILITY.md)。
 
-## Development
+---
+
+## 开发
 
 ```bash
 pnpm install
@@ -100,8 +93,26 @@ pnpm run test -- --run
 pnpm run build
 ```
 
-The integration tests create files in a temporary directory whose name contains Chinese characters and spaces. They skip Python-backed cases when no compatible interpreter is available; API snapshot and feature-registry tests still run. Rendering tests run when Word or LibreOffice is detected.
+集成测试在含中文和空格的临时目录中创建文件；缺少兼容 Python 时跳过 Python 用例，API 快照与功能注册测试仍会运行。检测到 Word 或 LibreOffice 时执行渲染测试。
 
-## License
+---
 
-[MIT](./LICENSE.md)
+* **测试情况**：2026-10-20，14 个用例通过；lint、类型检查、构建通过；CI（Node 22/24/26，Ubuntu + Windows）7 个 job 全部通过。
+* **未验证项**：Chip 插入、跨会话恢复与右侧边栏预览尚未在运行中的 GUI 手动验证；npm 包尚未发布。
+
+---
+
+## 许可证
+
+MIT
+
+第三方声明见 [`assets/icons/LICENSE`](assets/icons/LICENSE)。
+
+<!-- Badges -->
+
+[ci-src]: https://github.com/hairyf/dsh-office-suite/actions/workflows/ci.yml/badge.svg
+[ci-href]: https://github.com/hairyf/dsh-office-suite/actions/workflows/ci.yml
+[dsh-src]: https://img.shields.io/badge/DSH-0.2.1--rc.2-080f12?style=flat&colorA=080f12&colorB=1fa669
+[dsh-href]: https://github.com/deepseek-ai/deepseek-harness
+[license-src]: https://img.shields.io/github/license/hairyf/dsh-office-suite.svg?style=flat&colorA=080f12&colorB=1fa669
+[license-href]: https://github.com/hairyf/dsh-office-suite/blob/main/LICENSE.md
