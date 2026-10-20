@@ -36,6 +36,7 @@ interface CliStatus {
   readonly renderers: {
     readonly libreoffice: string | null
     readonly microsoft_office: { word: string | null, powerpoint: string | null, excel: string | null }
+    readonly kingsoft_wps: { writer: string | null, presentation: string | null, spreadsheet: string | null }
   }
 }
 
@@ -218,7 +219,15 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(read('xlsx', out).sheets[0].rows[1][4]).toBe('已审核')
   })
 
-  it.runIf(isWindows && status?.renderers.microsoft_office.excel != null)('recalculates XLSX formulas through Excel', () => {
+  it('rasterises a PDF page to a PNG through the shared script', () => {
+    const out = join(directory, 'raster', 'page-1.png')
+    const result = runScript(python!, 'shared', 'scripts/ensure_raster_image.py', ['--input', join(PACKAGE_ROOT, 'public', 'samples', 'sample.pdf'), '--page', '1', '--out', out]) as { ok: boolean, width: number, height: number }
+    expect(result.ok).toBe(true)
+    expect(result.width).toBeGreaterThan(500)
+    expect(existsSync(out)).toBe(true)
+  })
+
+  it.runIf(isWindows && (status?.renderers.microsoft_office.excel != null || status?.renderers.kingsoft_wps.spreadsheet != null))('recalculates XLSX formulas through Excel or WPS', () => {
     const file = create('spreadsheets', '财务 模型-计算前')
     const out = join(directory, '财务 模型-计算后.xlsx')
     expect(runCli(python!, ['xlsx', 'recalc', '--input', file, '--out', out]).ok).toBe(true)
@@ -227,10 +236,11 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(rows[3][1]).toBe(228)
   })
 
-  it.runIf(status?.renderers.libreoffice != null || status?.renderers.microsoft_office.word != null)('renders DOCX pages to PNG', () => {
+  it.runIf(status?.renderers.libreoffice != null || status?.renderers.microsoft_office.word != null || status?.renderers.kingsoft_wps.writer != null)('renders DOCX pages to PNG', () => {
     const file = create('documents', '季度 报告-渲染')
     const out = join(directory, 'render')
     const result = runCli(python!, ['docx', 'render', '--input', file, '--out-dir', out])
+    expect(['libreoffice', 'microsoft-office', 'kingsoft-wps']).toContain(result.renderer)
     expect(result.page_count).toBeGreaterThan(0)
     const pages = readdirSync(out).filter(name => name.endsWith('.png'))
     expect(pages.length).toBe(result.page_count)

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Gate a workbook on formulas that actually resolve.
 
-Recomputes the file through the helper CLI (`xlsx recalc`, which drives
-Microsoft Excel), then classifies every formula cell: a real value, an Excel
-error, or no cached value at all. Also flags formulas that point at sheets the
-workbook does not contain, and formulas whose text already carries a
-`#REF!` literal.
+Recomputes the file through the helper CLI (`xlsx recalc`, which drives Microsoft
+Excel or WPS Spreadsheets over COM), then classifies every formula cell: a real
+value, a spreadsheet error, or no cached value at all. Also flags formulas that
+point at sheets the workbook does not contain, and formulas whose text already
+carries a `#REF!` literal.
 
-Without Excel the recomputation cannot happen; `--no-recalc` then inspects the
-cached values a previous producer left in the file instead of failing outright.
-A file whose formulas carry no cached value at all cannot be certified.
+Without a calculation engine the recomputation cannot happen; `--no-recalc` then
+inspects the cached values a previous producer left in the file instead of failing
+outright. A file whose formulas carry no cached value at all cannot be certified.
 
 Exit codes:
   0  verified: every formula resolved to a value

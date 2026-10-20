@@ -26,8 +26,8 @@ from pathlib import Path
 
 DEFAULT_ROOT = Path(__file__).resolve().parents[3]
 RENDERER_HINT = (
-    "docx/pptx/xlsx rendering needs LibreOffice or Microsoft Office; "
-    "pdf rendering works without either (PyMuPDF)"
+    "docx/pptx/xlsx rendering needs LibreOffice, Microsoft Office, or WPS Office; "
+    "pdf rendering works without any of them (PyMuPDF)"
 )
 
 
@@ -116,11 +116,17 @@ def renderer_summary(report: dict) -> dict:
     """Reduce the CLI renderer block to a simple availability answer."""
     renderers = report.get("renderers") or {}
     office = renderers.get("microsoft_office") or {}
+    wps = renderers.get("kingsoft_wps") or {}
     available = {
         "libreoffice": renderers.get("libreoffice") or None,
         "microsoft_office": {k: office.get(k) or None for k in ("word", "powerpoint", "excel")},
+        "kingsoft_wps": {k: wps.get(k) or None for k in ("writer", "presentation", "spreadsheet")},
     }
-    available["any"] = bool(available["libreoffice"]) or any(available["microsoft_office"].values())
+    available["any"] = (
+        bool(available["libreoffice"])
+        or any(available["microsoft_office"].values())
+        or any(available["kingsoft_wps"].values())
+    )
     return available
 
 
@@ -232,7 +238,7 @@ def emit(args: argparse.Namespace, report: dict) -> None:
     if "renderers" in report:
         r = report["renderers"]
         print(f"renderer     libreoffice={r['libreoffice'] or 'none'}; "
-              f"office={r['microsoft_office']}")
+              f"office={r['microsoft_office']}; wps={r['kingsoft_wps']}")
     for warning in report["warnings"]:
         print(f"warning      {warning}")
     if report.get("error"):

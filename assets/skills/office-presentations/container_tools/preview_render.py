@@ -1,7 +1,7 @@
 """Draft slide preview: rasterise a .pptx into one PNG per slide without Office.
 
-Purpose: `render_slides.py` needs pixels to look at, and a machine may have
-neither LibreOffice nor PowerPoint. This module reads the package with
+Purpose: `render_slides.py` needs pixels to look at, and a machine may have no
+office renderer at all. This module reads the package with
 python-pptx and redraws every shape onto a PyMuPDF page: rectangles, text at
 its declared size, table grids, images, and a bar/line/pie sketch of charts.
 It then rasterises each page to PNG.

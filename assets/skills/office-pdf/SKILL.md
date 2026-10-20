@@ -42,7 +42,7 @@ Decide the route before you type a command. Every route ends in the same render 
 | --- | --- | --- |
 | `{"ok": false, ...}` and non-zero exit | Invalid argument, missing file, or a refused overwrite | Read the `error` field, fix what it names, re-run. Never strip a step to make it pass. |
 | `encrypted` in the error | The file needs a password | Ask the user for a decrypted copy; do not guess passwords or write one into a command. |
-| `no renderer found: install LibreOffice or Microsoft Office` | Media conversion for docx/pptx/xlsx is unavailable | PDF rendering still works; for a PDF this is harmless. For other formats report that appearance could not be checked. |
+| `no document renderer found: install LibreOffice, Microsoft Office, or WPS Office` | Media conversion for docx/pptx/xlsx is unavailable | PDF rendering still works (PyMuPDF); for a PDF this is harmless. For other formats report that appearance could not be checked. |
 | `leftover_chars_in_rect` greater than 0 | The redaction rectangle missed text | Enlarge `--pad` or reconvert the region; re-render before delivering. |
 | `not_applied` is not empty | A form value did not persist after save | Treat as a failure: check the field name, its allowed states, and whether the widget has an appearance stream. |
 | `chars: 0` on a page that shows text | Scanned page, no text layer | Say so; follow `references/limits.md` for the OCR situation. Do not return an empty extraction as success. |

@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SkillCandidate, SkillDefinition, SkillProvider } from '@deepseek-ai/dsh-skill'
 import type { RuntimeStatus } from './python'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
@@ -44,6 +44,11 @@ interface RendererFacts {
     readonly powerpoint: boolean
     readonly excel: boolean
   }
+  readonly kingsoftWps: {
+    readonly writer: boolean
+    readonly presentation: boolean
+    readonly spreadsheet: boolean
+  }
 }
 
 function findFile(candidates: readonly string[]): string | null {
@@ -52,6 +57,31 @@ function findFile(candidates: readonly string[]): string | null {
       return path
   }
   return null
+}
+
+const WPS_BINARIES = { writer: 'wps.exe', presentation: 'wpp.exe', spreadsheet: 'et.exe' } as const
+const WPS_ROOTS = [
+  process.env.WPS_OFFICE_HOME ?? '',
+  'C:\\Program Files\\Kingsoft\\WPS Office',
+  'C:\\Program Files (x86)\\Kingsoft\\WPS Office',
+  join(process.env.LOCALAPPDATA ?? '', 'Kingsoft', 'WPS Office'),
+].filter(Boolean)
+
+function wpsInstalled(binary: string): boolean {
+  for (const root of WPS_ROOTS) {
+    if (existsSync(join(root, 'office6', binary)))
+      return true
+    try {
+      for (const version of readdirSync(root)) {
+        if (existsSync(join(root, version, 'office6', binary)))
+          return true
+      }
+    }
+    catch {
+      // A missing or unreadable WPS root is simply not an installation.
+    }
+  }
+  return false
 }
 
 function rendererFacts(): RendererFacts {
@@ -73,6 +103,11 @@ function rendererFacts(): RendererFacts {
       word: officeRoots.some(root => existsSync(join(root, 'WINWORD.EXE'))),
       powerpoint: officeRoots.some(root => existsSync(join(root, 'POWERPNT.EXE'))),
       excel: officeRoots.some(root => existsSync(join(root, 'EXCEL.EXE'))),
+    },
+    kingsoftWps: {
+      writer: wpsInstalled(WPS_BINARIES.writer),
+      presentation: wpsInstalled(WPS_BINARIES.presentation),
+      spreadsheet: wpsInstalled(WPS_BINARIES.spreadsheet),
     },
   }
 }
@@ -157,7 +192,7 @@ export function apply(ctx: Context): void {
 
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'office_status',
-    description: 'Report the Office runtime state: compatible Python, installed Python packages, helper CLI path, and document renderers (LibreOffice or Microsoft Office). Call this before Office file work.',
+    description: 'Report the Office runtime state: compatible Python, installed Python packages, helper CLI path, and document renderers (LibreOffice, Microsoft Office, or WPS Office). Call this before Office file work.',
     parameters: {},
     output: {
       schema: { type: 'string' },

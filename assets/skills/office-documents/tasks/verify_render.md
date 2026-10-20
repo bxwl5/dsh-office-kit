@@ -32,7 +32,7 @@ The runtime reports `renderers.libreoffice: null` and no Office installation. `r
 In that state:
 
 - Verify structure with `docx read`, `docx_kit.py parts|text|xml` and the audit scripts.
-- Tell the user plainly that layout was not visually verified, and offer to install LibreOffice (or open the file in Word) instead of describing a page you did not see.
+- Tell the user plainly that layout was not visually verified, and offer to install Microsoft Office, WPS Office, or LibreOffice instead of describing a page you did not see.
 - Do not claim a file "looks good" from XML evidence alone.
 
 ## After any script edit

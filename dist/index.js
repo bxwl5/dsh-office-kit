@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import process from "node:process";
@@ -382,6 +382,26 @@ function findFile(candidates) {
 	for (const path of candidates) if (existsSync(path)) return path;
 	return null;
 }
+const WPS_BINARIES = {
+	writer: "wps.exe",
+	presentation: "wpp.exe",
+	spreadsheet: "et.exe"
+};
+const WPS_ROOTS = [
+	process.env.WPS_OFFICE_HOME ?? "",
+	"C:\\Program Files\\Kingsoft\\WPS Office",
+	"C:\\Program Files (x86)\\Kingsoft\\WPS Office",
+	join(process.env.LOCALAPPDATA ?? "", "Kingsoft", "WPS Office")
+].filter(Boolean);
+function wpsInstalled(binary) {
+	for (const root of WPS_ROOTS) {
+		if (existsSync(join(root, "office6", binary))) return true;
+		try {
+			for (const version of readdirSync(root)) if (existsSync(join(root, version, "office6", binary))) return true;
+		} catch {}
+	}
+	return false;
+}
 function rendererFacts() {
 	const libreoffice = findFile([
 		process.env.SOFFICE ?? "",
@@ -398,6 +418,11 @@ function rendererFacts() {
 			word: officeRoots.some((root) => existsSync(join(root, "WINWORD.EXE"))),
 			powerpoint: officeRoots.some((root) => existsSync(join(root, "POWERPNT.EXE"))),
 			excel: officeRoots.some((root) => existsSync(join(root, "EXCEL.EXE")))
+		},
+		kingsoftWps: {
+			writer: wpsInstalled(WPS_BINARIES.writer),
+			presentation: wpsInstalled(WPS_BINARIES.presentation),
+			spreadsheet: wpsInstalled(WPS_BINARIES.spreadsheet)
 		}
 	};
 }
@@ -483,7 +508,7 @@ function apply(ctx) {
 	ctx.effect(() => ctx.skills.registerProvider(() => provider), "office-suite: skills");
 	ctx.effect(() => ctx.tools.register(defineTool({
 		name: "office_status",
-		description: "Report the Office runtime state: compatible Python, installed Python packages, helper CLI path, and document renderers (LibreOffice or Microsoft Office). Call this before Office file work.",
+		description: "Report the Office runtime state: compatible Python, installed Python packages, helper CLI path, and document renderers (LibreOffice, Microsoft Office, or WPS Office). Call this before Office file work.",
 		parameters: {},
 		output: {
 			schema: { type: "string" },

@@ -4,12 +4,13 @@ description: Create, inspect, edit, recalculate, and verify Excel workbooks (.xl
 
 # Spreadsheets (.xlsx)
 
-A workbook is cells: each one holds a value, a format, and possibly a formula *string*. openpyxl writes all three and evaluates none of them, so a formula you just wrote has no cached result and `xlsx read` shows `=SUM(B2:B9)` where the user expects `1,950,400`. The calculation happens in an engine — Microsoft Excel via `xlsx recalc`, or whatever app the user opens the file in. Everything below follows from that: write values and formulas, then verify structure by reading back, then verify numbers by recalculating, then verify appearance by rendering.
+A workbook is cells: each one holds a value, a format, and possibly a formula *string*. openpyxl writes all three and evaluates none of them, so a formula you just wrote has no cached result and `xlsx read` shows `=SUM(B2:B9)` where the user expects `1,950,400`. The calculation happens in an engine — Microsoft Excel or WPS Spreadsheets via `xlsx recalc`, or whatever app the user opens the file in. Everything below follows from that: write values and formulas, then verify structure by reading back, then verify numbers by recalculating, then verify appearance by rendering.
 
 | User job | What is really happening | Fast path |
 | --- | --- | --- |
 | Build a new workbook | Cells written top-left at A1; `=`-prefixed strings become formulas; styles are per-cell objects; sheets get names, widths, freeze panes, merges | `xlsx create` spec, `tasks/create-workbook.md` |
 | Change cells in an existing file | Only the cells you name change; a re-save can drop objects openpyxl does not model (pivots, foreign charts) | `container_tools/set_cells.py` and friends, `tasks/edit-workbook.md` |
+| The workbook is open in Excel/WPS and the user wants it changed live | The target is the window, not the file on disk: unsaved user edits are in play and a COM write is not transactional | `../excel-live-control/SKILL.md` |
 | Inventory a file you did not write | Iterate sheets, used range, formulas vs values, merged ranges, conditional formats, defined names, charts | `container_tools/inspect_workbook.py` |
 | Compare two versions | Cell-by-cell walk with formula-aware, format-aware, structure-aware levels | `container_tools/diff_workbooks.py`, `tasks/diff-workbooks.md` |
 | Prove the numbers are real | Recalculate in Excel, then check every formula cell has a value, no error, no dangling sheet | `xlsx recalc` + `container_tools/recalc_gate.py`, `tasks/recalc-and-check.md` |
@@ -51,8 +52,8 @@ For xlsx the payload is `{ target, fileName, text: "", requirement, region, imag
 Three checks, in this order, after every mutation:
 
 1. **Structure and values.** `"<python>" "<cli>" xlsx read --input "<file>"` proves the cells you wrote are where you wrote them; `container_tools/inspect_workbook.py` proves charts, tables, conditional formats, names, and merges survived.
-2. **Numbers.** If any formula changed or was added, run `"<python>" "<cli>" xlsx recalc --input "<file>" --out "<file>"` and then `container_tools/recalc_gate.py --input "<file>"`. On a host without Microsoft Excel the recalc fails and `recalc_gate.py` reports `unverified` — say that plainly instead of presenting an empty cache as a result.
-3. **Appearance.** `"<python>" "<cli>" xlsx render --input "<file>" --out-dir "<render-dir>"`, then `read_image` each PNG. Check titles and labels, `###` columns, clipped numbers, charts cut off by the print area, plots with no categories, legends naming `Series 1`, conditional formatting that never fired, and blank pages. If no renderer exists on this host the render fails explicitly: report the file as structurally verified but visually unchecked, and offer to rebuild from a spec. On a Windows host with WPS Office installed, `et.exe` can export the workbook to PDF and PyMuPDF can rasterise it; that is a workaround for seeing the layout, not proof that the user's viewer will agree.
+2. **Numbers.** If any formula changed or was added, run `"<python>" "<cli>" xlsx recalc --input "<file>" --out "<file>"` and then `container_tools/recalc_gate.py --input "<file>"`. On a host without Microsoft Excel or WPS Spreadsheets the recalc fails and `recalc_gate.py` reports `unverified` — say that plainly instead of presenting an empty cache as a result.
+3. **Appearance.** `"<python>" "<cli>" xlsx render --input "<file>" --out-dir "<render-dir>"`, then `read_image` each PNG. Check titles and labels, `###` columns, clipped numbers, charts cut off by the print area, plots with no categories, legends naming `Series 1`, conditional formatting that never fired, and blank pages. The render goes through Excel, WPS Spreadsheets, or LibreOffice; with none installed it fails explicitly: report the file as structurally verified but visually unchecked, and offer to rebuild from a spec. WPS in particular needs its print area and page setup right before exporting, so a layout complaint may be the export settings rather than the sheet.
 
 Two or three render/fix passes are normal. If a defect survives three, say what still looks wrong.
 

@@ -93,53 +93,121 @@ def find_soffice() -> str | None:
     return found
 
 
-def office_binary(kind: str) -> str | None:
+#: Automation entry points per suite and format: (executable, COM ProgID).
+RENDER_ENGINES: dict[str, dict[str, tuple[str, str]]] = {
+    "microsoft": {
+        "docx": ("WINWORD.EXE", "Word.Application"),
+        "pptx": ("POWERPNT.EXE", "PowerPoint.Application"),
+        "xlsx": ("EXCEL.EXE", "Excel.Application"),
+    },
+    "kingsoft": {
+        "docx": ("wps.exe", "KWps.Application"),
+        "pptx": ("wpp.exe", "KWpp.Application"),
+        "xlsx": ("et.exe", "Ket.Application"),
+    },
+}
+
+
+def _kingsoft_dirs() -> list[Path]:
+    """WPS Office hides its binaries under a per-version directory."""
+    bases = [
+        os.environ.get("WPS_OFFICE_HOME"),
+        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Kingsoft", "WPS Office"),
+        os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Kingsoft", "WPS Office"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Kingsoft", "WPS Office"),
+    ]
+    found: list[Path] = []
+    for base in bases:
+        if not base:
+            continue
+        root = Path(base)
+        if (root / "office6").is_dir():
+            found.append(root / "office6")
+            continue
+        if not root.is_dir():
+            continue
+        versions = [child for child in root.iterdir() if (child / "office6").is_dir()]
+        versions.sort(key=lambda child: [int(part) if part.isdigit() else part for part in child.name.replace("-", ".").split(".")], reverse=True)
+        for child in versions:
+            found.append(child / "office6")
+    return found
+
+
+def office_engine(kind: str, family: str | None = None) -> tuple[str, str] | None:
+    """Return (suite, executable) for an installed Office-compatible application."""
     if sys.platform != "win32":
         return None
-    names = {"docx": "WINWORD.EXE", "pptx": "POWERPNT.EXE", "xlsx": "EXCEL.EXE"}
-    name = names[kind]
-    roots = [
-        r"C:\Program Files\Microsoft Office\root\Office16",
-        r"C:\Program Files (x86)\Microsoft Office\root\Office16",
-        r"C:\Program Files\Microsoft Office\Office16",
-        r"C:\Program Files (x86)\Microsoft Office\Office16",
-    ]
-    for root in roots:
-        candidate = Path(root) / name
-        if candidate.is_file():
-            return str(candidate)
+    families = [family] if family else ["microsoft", "kingsoft"]
+    for name in families:
+        executable = RENDER_ENGINES[name][kind][0]
+        if name == "microsoft":
+            roots = [
+                r"C:\Program Files\Microsoft Office\root\Office16",
+                r"C:\Program Files (x86)\Microsoft Office\root\Office16",
+                r"C:\Program Files\Microsoft Office\Office16",
+                r"C:\Program Files (x86)\Microsoft Office\Office16",
+            ]
+            for root in roots:
+                candidate = Path(root) / executable
+                if candidate.is_file():
+                    return name, str(candidate)
+            continue
+        for directory in _kingsoft_dirs():
+            candidate = directory / executable
+            if candidate.is_file():
+                return name, str(candidate)
     return None
+
+
+def office_binary(kind: str) -> str | None:
+    engine = office_engine(kind)
+    return engine[1] if engine else None
+
+
+def _engine_path(kind: str, family: str) -> str | None:
+    engine = office_engine(kind, family)
+    return engine[1] if engine else None
 
 
 def _powershell() -> str | None:
     return shutil.which("powershell") or shutil.which("pwsh")
 
 
-def _office_script(kind: str) -> str:
+def _office_script(kind: str, family: str) -> str:
+    progid = RENDER_ENGINES[family][kind][1]
     if kind == "docx":
-        return r"""
+        if family == "kingsoft":
+            return rf"""
 $ErrorActionPreference = 'Stop'
-$app = New-Object -ComObject Word.Application
+$app = New-Object -ComObject {progid}
 $app.Visible = $false
 $app.DisplayAlerts = 0
 $doc = $app.Documents.Open($env:DSH_INPUT, $false, $true)
-try { $doc.ExportAsFixedFormat($env:DSH_PDF, 17) } finally { $doc.Close(0); $app.Quit() }
+try {{ $doc.SaveAs([ref]$env:DSH_PDF, [ref]17) }} finally {{ $doc.Close(0); $app.Quit() }}
+"""
+        return rf"""
+$ErrorActionPreference = 'Stop'
+$app = New-Object -ComObject {progid}
+$app.Visible = $false
+$app.DisplayAlerts = 0
+$doc = $app.Documents.Open($env:DSH_INPUT, $false, $true)
+try {{ $doc.ExportAsFixedFormat($env:DSH_PDF, 17) }} finally {{ $doc.Close(0); $app.Quit() }}
 """
     if kind == "pptx":
-        return r"""
+        return rf"""
 $ErrorActionPreference = 'Stop'
-$app = New-Object -ComObject PowerPoint.Application
+$app = New-Object -ComObject {progid}
 $app.DisplayAlerts = 1
 $pres = $app.Presentations.Open($env:DSH_INPUT, $true, $false, $false)
-try { $pres.SaveAs($env:DSH_PDF, 32) } finally { $pres.Close(); $app.Quit() }
+try {{ $pres.SaveAs($env:DSH_PDF, 32) }} finally {{ $pres.Close(); $app.Quit() }}
 """
-    return r"""
+    return rf"""
 $ErrorActionPreference = 'Stop'
-$app = New-Object -ComObject Excel.Application
+$app = New-Object -ComObject {progid}
 $app.Visible = $false
 $app.DisplayAlerts = $false
 $wb = $app.Workbooks.Open($env:DSH_INPUT)
-try { $wb.ExportAsFixedFormat(0, $env:DSH_PDF) } finally { $wb.Close($false); $app.Quit() }
+try {{ $wb.ExportAsFixedFormat(0, $env:DSH_PDF) }} finally {{ $wb.Close($false); $app.Quit() }}
 """
 
 
@@ -151,28 +219,33 @@ def export_pdf(input_path: Path, kind: str, out_dir: Path) -> tuple[str, str]:
         pdf.unlink()
 
     power_shell = _powershell()
-    if power_shell and office_binary(kind):
-        script = Path(tempfile.gettempdir()) / f"dsh-office-{kind}-{os.getpid()}.ps1"
-        script.write_text(_office_script(kind), encoding="utf-8")
-        env = dict(os.environ)
-        env["DSH_INPUT"] = str(input_path.resolve())
-        env["DSH_PDF"] = str(pdf.resolve())
-        try:
-            completed = subprocess.run(
-                [power_shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script)],
-                capture_output=True,
-                text=True,
-                timeout=240,
-                env=env,
-            )
-        except subprocess.TimeoutExpired:
-            fail(f"Microsoft Office export timed out for {input_path.name}")
-        finally:
-            script.unlink(missing_ok=True)
-        if completed.returncode != 0 or not pdf.is_file():
-            detail = (completed.stderr or completed.stdout).strip()
-            fail(f"Microsoft Office export failed for {input_path.name}", detail=detail or None)
-        return "microsoft-office", str(pdf)
+    failures: list[str] = []
+    if power_shell:
+        for family, renderer in (("microsoft", "microsoft-office"), ("kingsoft", "kingsoft-wps")):
+            engine = office_engine(kind, family)
+            if engine is None:
+                continue
+            script = Path(tempfile.gettempdir()) / f"dsh-office-{kind}-{os.getpid()}.ps1"
+            script.write_text(_office_script(kind, family), encoding="utf-8")
+            env = dict(os.environ)
+            env["DSH_INPUT"] = str(input_path.resolve())
+            env["DSH_PDF"] = str(pdf.resolve())
+            try:
+                completed = subprocess.run(
+                    [power_shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+                    capture_output=True,
+                    text=True,
+                    timeout=240,
+                    env=env,
+                )
+            except subprocess.TimeoutExpired:
+                failures.append(f"{family}: timed out")
+                continue
+            finally:
+                script.unlink(missing_ok=True)
+            if completed.returncode == 0 and pdf.is_file():
+                return renderer, str(pdf)
+            failures.append(f"{family}: " + ((completed.stderr or completed.stdout).strip() or "no PDF produced"))
 
     soffice = find_soffice()
     if soffice:
@@ -187,7 +260,10 @@ def export_pdf(input_path: Path, kind: str, out_dir: Path) -> tuple[str, str]:
             fail(f"LibreOffice export failed for {input_path.name}", detail=detail or None)
         return "libreoffice", str(pdf)
 
-    fail("no document renderer found: install LibreOffice or Microsoft Office (Word/PowerPoint/Excel)")
+    fail(
+        "no document renderer found: install LibreOffice, Microsoft Office, or WPS Office",
+        detail="; ".join(failures) or None,
+    )
 
 
 def rasterize_pdf(pdf: str, out_dir: Path, dpi: int = 110) -> list[str]:
@@ -1011,23 +1087,25 @@ def xlsx_read(input_path: Path, data_only: bool = False) -> dict[str, Any]:
 
 
 def xlsx_recalc(input_path: Path, out: Path) -> dict[str, Any]:
-    """Force Microsoft Excel to recalculate and save cached formula values."""
-    if sys.platform != "win32" or office_binary("xlsx") is None:
-        fail("formula recalculation requires Microsoft Excel on Windows; openpyxl cannot evaluate formulas")
+    """Force a spreadsheet application to recalculate and store cached formula values."""
+    engine = office_engine("xlsx") if sys.platform == "win32" else None
+    if engine is None or _powershell() is None:
+        fail("formula recalculation requires Microsoft Excel or WPS Spreadsheets on Windows; openpyxl cannot evaluate formulas")
+    family, executable = engine
+    progid = RENDER_ENGINES[family]["xlsx"][1]
+    ensure_parent(str(out))
+    if out.resolve() != input_path.resolve():
+        shutil.copyfile(input_path, out)
     script = Path(tempfile.gettempdir()) / f"dsh-office-recalc-{os.getpid()}.ps1"
-    script.write_text(r"""
+    script.write_text(rf"""
 $ErrorActionPreference = 'Stop'
-$app = New-Object -ComObject Excel.Application
+$app = New-Object -ComObject {progid}
 $app.Visible = $false
 $app.DisplayAlerts = $false
-$wb = $app.Workbooks.Open($env:DSH_INPUT)
-try {
-  $app.CalculateFull()
-  $wb.SaveAs($env:DSH_OUT, 51)
-} finally { $wb.Close($false); $app.Quit() }
+$wb = $app.Workbooks.Open($env:DSH_OUT)
+try {{ $app.CalculateFull(); $wb.Save() }} finally {{ $wb.Close($true); $app.Quit() }}
 """, encoding="utf-8")
     env = dict(os.environ)
-    env["DSH_INPUT"] = str(input_path.resolve())
     env["DSH_OUT"] = str(out.resolve())
     try:
         completed = subprocess.run(
@@ -1040,8 +1118,28 @@ try {
     finally:
         script.unlink(missing_ok=True)
     if completed.returncode != 0 or not out.is_file():
-        fail("Excel recalculation failed", detail=(completed.stderr or completed.stdout).strip() or None)
-    return {"ok": True, "kind": "xlsx", "command": "recalc", "input": str(input_path), "output": str(out)}
+        fail("formula recalculation failed", detail=(completed.stderr or completed.stdout).strip() or None)
+    cached = 0
+    try:
+        import openpyxl
+
+        workbook = openpyxl.load_workbook(str(out), data_only=True)
+        for sheet in workbook.worksheets:
+            for row in sheet.iter_rows():
+                cached += sum(1 for cell in row if cell.value is not None)
+        workbook.close()
+    except Exception:
+        cached = 0
+    return {
+        "ok": True,
+        "kind": "xlsx",
+        "command": "recalc",
+        "input": str(input_path),
+        "output": str(out),
+        "renderer": f"{family}-office" if family == "microsoft" else "kingsoft-wps",
+        "executable": executable,
+        "cached_values": cached,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1081,9 +1179,20 @@ def status() -> dict[str, Any]:
         "renderers": {
             "libreoffice": find_soffice(),
             "microsoft_office": {
-                "word": office_binary("docx"),
-                "powerpoint": office_binary("pptx"),
-                "excel": office_binary("xlsx"),
+                "word": _engine_path("docx", "microsoft"),
+                "powerpoint": _engine_path("pptx", "microsoft"),
+                "excel": _engine_path("xlsx", "microsoft"),
+            },
+            "kingsoft_wps": {
+                "writer": _engine_path("docx", "kingsoft"),
+                "presentation": _engine_path("pptx", "kingsoft"),
+                "spreadsheet": _engine_path("xlsx", "kingsoft"),
+            },
+            "can_render": {
+                "docx": bool(office_engine("docx") or find_soffice()),
+                "pptx": bool(office_engine("pptx") or find_soffice()),
+                "xlsx": bool(office_engine("xlsx") or find_soffice()),
+                "pdf": True,
             },
         },
     }

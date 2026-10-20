@@ -105,16 +105,30 @@ what still looks wrong instead of pretending it is fixed.
 Then call `present` with the final file and reply with one sentence about what
 changed. For an edit, mention the original path and the edited path.
 
+## Rasterizing art
+
+Decks, workbooks and documents embed raster images only, so an SVG or a chosen
+PDF page has to become a PNG first; the same call downscales an oversized raster.
+
+```bash
+"<python>" "<shared>/scripts/ensure_raster_image.py" --input "<art.svg>" --dpi 300 --out "<art.png>"
+"<python>" "<shared>/scripts/ensure_raster_image.py" --input "<deck.pdf>" --page 2 --width 1600 --out "<slide-2.png>"
+```
+
+It prints one JSON object with the PNG's `width`/`height` and never overwrites
+the input. Open that PNG with `read_image` and look at it before embedding it:
+a blank, clipped or miscoloured raster is invisible inside the host file.
+
 ## Failure ladder
 
 | Symptom | Meaning | What you do and say |
 | --- | --- | --- |
 | No `## Office runtime` JSON; skill says *No working Python runtime is available* | The plugin cannot install or find a compatible interpreter | Do not run helper commands, do not write a document by hand. Give the user the remedy command from the skill body, ask them to run it, then call `office_status` again. |
 | `office_status` shows `cli.exists: false`, or `python`/`cli` file not found | The bundled helper or its install is incomplete | Report the missing path. Do not substitute another tool that produces a different file. |
-| `render` fails: `no document renderer found: install LibreOffice or Microsoft Office (Word/PowerPoint/Excel)` | Create/read/edit work, but docx/pptx/xlsx cannot be rasterised here | Do not claim you inspected it. Say the file was built and validated structurally (read verb), but this machine has no renderer so you could not check its appearance; the preview stays unavailable until LibreOffice or Office is installed. `pdf render` still works. If the user needs visual confidence now, offer to rebuild from a spec or to present the unverified file explicitly labelled as such. |
+| `render` fails: `no document renderer found: install LibreOffice, Microsoft Office, or WPS Office` | Create/read/edit work, but docx/pptx/xlsx cannot be rasterised here | Do not claim you inspected it. Say the file was built and validated structurally (read verb), but this machine has no renderer so you could not check its appearance; the preview stays unavailable until Microsoft Office, WPS Office, or LibreOffice is installed. `pdf render` still works. If the user needs visual confidence now, offer to rebuild from a spec or to present the unverified file explicitly labelled as such. |
 | Annotation region does not land on anything, or the payload says `unmapped: true` | The drawn region cannot be tied to an object in the file | Do not silently shift the region or guess a cell/shape. Say what you could identify (preview page, text, resolved cells) and which item you could not locate, then ask the user for the text or cell. |
 | `{"ok": false, "error": "..."}` and non-zero exit | The spec was rejected (unknown key, bad type, missing file) | Read the error text, fix the spec key it names, re-run the same command. Never strip a failing block to make the command pass — that silently deletes user content. |
-| `xlsx recalc` fails with *requires Microsoft Excel on Windows* | openpyxl cannot evaluate formulas | Report formula cells as uncalculated; do not invent computed values. |
+| `xlsx recalc` fails with *requires Microsoft Excel or WPS Spreadsheets* | openpyxl cannot evaluate formulas | Report formula cells as uncalculated; do not invent computed values. |
 | The helper has no verb for what the requirement needs | The common path is short; the capability is not limited to it | Take the pack script route, or write a short snippet against `python-docx` / `openpyxl` / `python-pptx` / `pypdf` / `PyMuPDF` / `reportlab`, run it with `<python>`, then `read` the file back and render. Never refuse a job because a verb is missing. |
 | `read` returns an empty structure for a file the user supplied | Unsupported or corrupt input | Say what failed and stop; do not overwrite the user's file with an empty one. |
 

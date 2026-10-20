@@ -35,8 +35,10 @@ dsh plugin add dsh-office-kit
 - 📄 **PDF**：`/pdf` 创建、读取和编辑 PDF，支持合并、旋转、删页与元数据。
 - 📽️ **演示文稿**：`/presentations` 创建、读取和编辑 PPTX，支持项目符号、表格、图表与图片。
 - 📊 **电子表格**：`/spreadsheets` 创建、读取和编辑 XLSX，支持公式、样式、图表、冻结窗格与重算。
-- 🖍️ **侧边栏标注**：在 PDF、DOC/DOCX 预览中吸附段落或框选区域，批量提交修改要求。
+- 🖍️ **侧边栏标注**：在 PDF、DOC/DOCX、PPTX、XLSX 预览中吸附段落或框选区域，批量提交修改要求。
 - 🔗 **会话引用**：通过 Chip 调用文档技能；注释链接可悬停查看文件名与要求，PDF 标注附选区截图。
+- 🖼️ **渲染校验**：DOCX/PPTX/XLSX 经 Microsoft Office、WPS Office 或 LibreOffice 导出 PDF 再栅格化，PDF 直接用 PyMuPDF；SVG/PDF 素材可用 `ensure_raster_image.py` 转成 PNG 后嵌入。
+- 🧮 **活体表格**：`excel-live-control` 技能通过 COM 驱动已经打开的 Excel / WPS 表格（读区、写值、样式、图表、重算、保存）。
 
 ## 🚀 快速开始
 

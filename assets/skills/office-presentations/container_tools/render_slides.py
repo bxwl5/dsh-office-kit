@@ -1,9 +1,9 @@
 """Render a deck to PNGs, one per slide, using whatever engine is available.
 
-Purpose: the verification loop needs pixels. Try LibreOffice first (a faithful
-renderer). When no office suite is installed, fall back to the draft geometry
-renderer in `preview_render.py` and say so loudly in the JSON — a draft preview
-proves placement, not typography.
+Purpose: the verification loop needs pixels. Ask the plugin CLI first: it drives
+Microsoft Office, WPS Office, or LibreOffice, whichever is installed. When none
+is, fall back to the draft geometry renderer in `preview_render.py` and say so
+loudly in the JSON — a draft preview proves placement, not typography.
 
 Inputs may be a .pptx or a .pdf. Output is `<out-dir>/slide-NN.png` for every
 page, plus `<out-dir>/render.json`.
@@ -17,7 +17,6 @@ Exit codes:
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -26,28 +25,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-OFFICE_CANDIDATES = (
-    "soffice",
-    "libreoffice",
-    r"C:\Program Files\LibreOffice\program\soffice.exe",
-    r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
-    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-    "/usr/bin/soffice",
-    "/usr/lib/libreoffice/program/soffice",
-)
 
-
-def find_office() -> str | None:
-    """First working LibreOffice entry point we can find, else None."""
-    for candidate in OFFICE_CANDIDATES:
-        if os.path.sep in candidate or candidate.endswith(".exe"):
-            if Path(candidate).is_file():
-                return candidate
-            continue
-        located = shutil.which(candidate)
-        if located:
-            return located
-    return None
+def office_cli() -> Path:
+    """The plugin's helper CLI, which owns renderer discovery."""
+    return Path(__file__).resolve().parents[4] / "python" / "office_cli.py"
 
 
 def rasterise_pdf(pdf_path: Path, out_dir: Path, dpi: int) -> list[str]:
@@ -69,23 +50,33 @@ def rasterise_pdf(pdf_path: Path, out_dir: Path, dpi: int) -> list[str]:
     return files
 
 
-def render_with_office(office: str, source: Path, out_dir: Path, dpi: int) -> dict:
-    with tempfile.TemporaryDirectory() as scratch:
-        stem = source.stem
-        command = [office, "--headless", "--convert-to", "pdf", "--outdir", scratch, str(source)]
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=240, check=False)
-        pdf = Path(scratch) / f"{stem}.pdf"
-        if not pdf.is_file():
-            raise RuntimeError((completed.stderr or completed.stdout or "conversion produced no PDF").strip()[:400])
-        files = rasterise_pdf(pdf, out_dir, dpi)
-    return {
-        "ok": bool(files),
-        "engine": "libreoffice",
-        "fidelity": "faithful",
-        "slides": len(files),
-        "dpi": dpi,
-        "files": files,
-    }
+def render_with_office(source: Path, out_dir: Path, dpi: int) -> dict:
+    """Export through the CLI, which tries every installed office suite."""
+    scratch = Path(tempfile.mkdtemp(prefix="dsh-render-"))
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(office_cli()), "pptx", "render",
+             "--input", str(source), "--out-dir", str(scratch), "--dpi", str(dpi)],
+            capture_output=True, text=True, timeout=300, check=False,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError((completed.stderr or completed.stdout or "render failed").strip()[:400])
+        report = json.loads(completed.stdout)
+        files: list[str] = []
+        for index, page in enumerate(report.get("pages") or [], start=1):
+            target = out_dir / f"slide-{index:02d}.png"
+            shutil.move(page, target)
+            files.append(str(target))
+        return {
+            "ok": bool(files),
+            "engine": report.get("renderer") or "office",
+            "fidelity": "faithful",
+            "slides": len(files),
+            "dpi": dpi,
+            "files": files,
+        }
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def render(input_path: str | Path, out_dir: str | Path, dpi: int = 110, engine: str = "auto", width: int = 1600) -> dict:
@@ -101,17 +92,13 @@ def render(input_path: str | Path, out_dir: str | Path, dpi: int = 110, engine: 
 
     notes: list[str] = []
     if engine in {"auto", "office"}:
-        office = find_office()
-        if office:
-            try:
-                return render_with_office(office, source, destination, dpi)
-            except Exception as exc:  # noqa: BLE001 - fall through to the draft engine
-                notes.append(f"LibreOffice failed: {exc}")
-        else:
-            notes.append("no LibreOffice on this machine")
+        try:
+            return render_with_office(source, destination, dpi)
+        except Exception as exc:  # noqa: BLE001 - fall through to the draft engine
+            notes.append(f"office render failed: {exc}")
 
     if engine == "office":
-        return {"ok": False, "engine": "libreoffice", "notes": notes, "error": {"code": "no_engine", "message": "LibreOffice is required for --engine office"}}
+        return {"ok": False, "engine": "office", "notes": notes, "error": {"code": "no_engine", "message": "no Microsoft Office, WPS Office, or LibreOffice renderer is available"}}
 
     from preview_render import render_preview
 

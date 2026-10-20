@@ -84,10 +84,12 @@ title.
 
 ## 6. When nothing can render
 
-With no LibreOffice and no Office installed, `render_slides.py` falls back to
-`--engine draft`, a PyMuPDF geometry preview. It shows placement, overflow and
-overlap — not typography or theme chrome. Say so when reporting: "verified as a
-geometry preview" is honest, "looks great" from an approximate render is not.
+With no Microsoft Office, WPS Office, or LibreOffice installed
+(`office_status` → `renderers.kingsoft_wps` / `microsoft_office` / `libreoffice`),
+`render_slides.py` falls back to `--engine draft`, a PyMuPDF geometry preview. It
+shows placement, overflow and overlap — not typography or theme chrome. Say so
+when reporting: "verified as a geometry preview" is honest, "looks great" from an
+approximate render is not.
 
 If even the preview cannot run, the delivery is unverified: report the failing
 command, the file's slide count from `pptx read`, and the gate results, and tell
