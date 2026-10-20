@@ -32,10 +32,10 @@ const FILE_ADDRESS_PREFIX = 'dsh-resource://file/'
 const zh = {
   'menu.documents.label': '文档',
   'menu.documents.description': '创建、读取、编辑和渲染 DOCX 文档',
-  'menu.pdf.label': 'PDF',
+  'menu.pdf.label': 'PDF 文档',
   'menu.pdf.description': '读取、创建、检查、渲染和验证 PDF',
-  'menu.presentations.label': '幻灯片',
-  'menu.presentations.description': '创建、编辑、渲染和导出 PPTX 幻灯片',
+  'menu.presentations.label': '演示文稿',
+  'menu.presentations.description': '创建、编辑、渲染和导出 PPTX 演示文稿',
   'menu.spreadsheets.label': '电子表格',
   'menu.spreadsheets.description': '创建、编辑、计算和导出 XLSX 电子表格',
 } as const
@@ -43,7 +43,7 @@ const zh = {
 const en: Record<keyof typeof zh, string> = {
   'menu.documents.label': 'Documents',
   'menu.documents.description': 'Create, read, edit, and render DOCX documents',
-  'menu.pdf.label': 'PDF',
+  'menu.pdf.label': 'PDF documents',
   'menu.pdf.description': 'Read, create, inspect, render, and verify PDFs',
   'menu.presentations.label': 'Presentations',
   'menu.presentations.description': 'Create, edit, render, and export PPTX decks',
