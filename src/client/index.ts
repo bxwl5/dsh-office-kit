@@ -34,8 +34,8 @@ const zh = {
   'menu.documents.description': '创建、读取、编辑和渲染 DOCX 文档',
   'menu.pdf.label': 'PDF',
   'menu.pdf.description': '读取、创建、检查、渲染和验证 PDF',
-  'menu.presentations.label': '演示文稿',
-  'menu.presentations.description': '创建、编辑、渲染和导出 PPTX 演示文稿',
+  'menu.presentations.label': '幻灯片',
+  'menu.presentations.description': '创建、编辑、渲染和导出 PPTX 幻灯片',
   'menu.spreadsheets.label': '电子表格',
   'menu.spreadsheets.description': '创建、编辑、计算和导出 XLSX 电子表格',
 } as const
