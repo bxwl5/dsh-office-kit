@@ -32,6 +32,7 @@ function configuredPython(): string | undefined {
 
 interface CliStatus {
   readonly ok: boolean
+  readonly plugin_version: string
   readonly packages: readonly { package: string, installed: boolean }[]
   readonly renderers: {
     readonly libreoffice: string | null
@@ -55,6 +56,14 @@ function runCli(python: string, args: string[]): Record<string, any> {
 
 function runScript(python: string, pack: string, script: string, args: string[]): Record<string, any> {
   return runJson(python, [join(PACKAGE_ROOT, 'assets', 'skills', pack, script), ...args])
+}
+
+/** Run a pack script the way a user shell would: no UTF-8 env overrides, POSIX locale. */
+function runScriptRaw(python: string, pack: string, script: string, args: string[]): Buffer {
+  const env: NodeJS.ProcessEnv = { ...process.env, LC_ALL: 'C', LANG: 'C' }
+  delete env.PYTHONIOENCODING
+  delete env.PYTHONUTF8
+  return execFileSync(python, [join(PACKAGE_ROOT, 'assets', 'skills', pack, script), ...args], { env, maxBuffer: 8 * 1024 * 1024 })
 }
 
 const python = configuredPython()
@@ -154,6 +163,15 @@ describe.runIf(ready)('office CLI integration', () => {
 
   afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
+  it('reports the version from package.json', () => {
+    const manifest = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8')) as { version: string }
+    expect(status?.plugin_version).toBe(manifest.version)
+  })
+
+  it('rejects the edit verb that now lives in the pack scripts', () => {
+    expect(() => runCli(python!, ['docx', 'edit', '--help'])).toThrow()
+  })
+
   it('creates and reads DOCX content including CJK, tables, and equations', () => {
     const file = create('documents', '季度 报告')
     const result = read('docx', file)
@@ -174,11 +192,28 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(result.equations).toBe(1)
   })
 
+  it('writes DOCX without library metadata and marks the table header row', () => {
+    const file = create('documents', '元数据 检查')
+    const report = runJson(python!, ['-c', 'import json, sys; from docx import Document; d = Document(sys.argv[1]); p = d.core_properties; print(json.dumps({"comments": p.comments, "last_modified_by": p.last_modified_by, "header": "w:tblHeader" in d.tables[0].rows[0]._tr.trPr.xml}))', file])
+    expect(report.comments).toBe('')
+    expect(report.last_modified_by).toBe('DSH Office Suite')
+    expect(report.header).toBe(true)
+  })
+
   it('creates and reads a Chinese PDF', () => {
     const file = create('pdf', '产品 说明')
     const result = read('pdf', file)
     expect(result.page_count).toBeGreaterThan(0)
     expect(result.pages.map((page: { text: string }) => page.text).join('')).toContain('产品说明')
+  })
+
+  it('renders a PDF title once when the spec also carries a title block', () => {
+    const spec = join(directory, 'pdf-title.json')
+    const out = join(directory, '巡检 报告.pdf')
+    writeFileSync(spec, JSON.stringify({ title: '巡检报告', blocks: [{ type: 'title', text: '巡检报告' }, { type: 'paragraph', text: '正文' }] }))
+    expect(runCli(python!, ['pdf', 'create', '--spec', spec, '--out', out]).ok).toBe(true)
+    const text = read('pdf', out).pages.map((page: { text: string }) => page.text).join('')
+    expect(text.split('巡检报告')).toHaveLength(2)
   })
 
   it('writes PDF metadata through the pack script and leaves the original untouched', () => {
@@ -225,6 +260,18 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(result.ok).toBe(true)
     expect(result.width).toBeGreaterThan(500)
     expect(existsSync(out)).toBe(true)
+  })
+
+  it('writes UTF-8 JSON without UTF-8 env overrides and rasterises SVG', () => {
+    const svg = join(directory, '图标.svg')
+    const png = join(directory, '图标.png')
+    writeFileSync(svg, '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60"><rect width="120" height="60" fill="#1f3864"/></svg>')
+    const raw = runScriptRaw(python!, 'shared', 'scripts/ensure_raster_image.py', ['--input', svg, '--width', '240', '--out', png])
+    expect(Buffer.from(raw.toString('utf8'), 'utf8').equals(raw)).toBe(true)
+    const result = JSON.parse(raw.toString('utf8'))
+    expect(result.ok).toBe(true)
+    expect([result.width, result.height]).toEqual([240, 120])
+    expect(existsSync(png)).toBe(true)
   })
 
   it.runIf(isWindows && (status?.renderers.microsoft_office.excel != null || status?.renderers.kingsoft_wps.spreadsheet != null))('recalculates XLSX formulas through Excel or WPS', () => {
