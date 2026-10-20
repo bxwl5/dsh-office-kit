@@ -16,7 +16,7 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
@@ -25,15 +25,15 @@ import { fileURLToPath } from 'node:url'
 const PACKAGE_ROOT = dirname(fileURLToPath(import.meta.url))
 const IS_WINDOWS = process.platform === 'win32'
 const PYTHON_VERSION = '3.12.10'
-const RUNTIME_DIR = join(homedir(), '.dsh', 'office', 'runtime')
-const VENV_DIR = join(RUNTIME_DIR, 'venv')
+export const RUNTIME_DIR = join(homedir(), '.dsh', 'office', 'runtime')
+export const VENV_DIR = join(RUNTIME_DIR, 'venv')
 const VENV_PYTHON = join(VENV_DIR, IS_WINDOWS ? 'Scripts/python.exe' : 'bin/python')
 const LEGACY_DATA_DIR = IS_WINDOWS
   ? join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'dsh-office-kit')
   : process.platform === 'darwin'
     ? join(homedir(), 'Library', 'Application Support', 'dsh-office-kit')
     : join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'dsh-office-kit')
-const LEGACY_VENV_DIR = join(LEGACY_DATA_DIR, 'venv')
+export const LEGACY_VENV_DIR = join(LEGACY_DATA_DIR, 'venv')
 const LEGACY_VENV_PYTHON = join(LEGACY_VENV_DIR, IS_WINDOWS ? 'Scripts/python.exe' : 'bin/python')
 const CONFIG_DIR = join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), 'dsh-office-kit')
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
@@ -181,6 +181,24 @@ function verifySignature(file) {
   }
 }
 
+/**
+ * Installer switches. PATH is appended by the installer itself (`AppendPath=1`),
+ * the install location stays the per-user default (no `TargetDir`), and the
+ * `py` launcher is kept so `py -3.12` works.
+ */
+export function installerArguments() {
+  return [
+    '/quiet',
+    'InstallAllUsers=0',
+    'AppendPath=1',
+    'CompileAll=0',
+    'Include_test=0',
+    'Include_doc=0',
+    'Include_pip=1',
+    'SimpleInstall=1',
+  ]
+}
+
 function installPython() {
   if (!IS_WINDOWS) {
     return false
@@ -191,17 +209,7 @@ function installPython() {
   download(url, installer)
   verifySignature(installer)
   log(`installing Python ${PYTHON_VERSION} into the installer default per-user location`)
-  const args = [
-    '/quiet',
-    'InstallAllUsers=0',
-    'AppendPath=1',
-    'CompileAll=0',
-    'Include_test=0',
-    'Include_doc=0',
-    'Include_pip=1',
-    'SimpleInstall=1',
-  ]
-  const result = spawnSync(installer, args, { stdio: 'inherit', timeout: 15 * 60 * 1000 })
+  const result = spawnSync(installer, installerArguments(), { stdio: 'inherit', timeout: 15 * 60 * 1000 })
   rmSync(installer, { force: true })
   if (result.status !== 0) {
     throw new Error(`Python installer exited with status ${result.status}`)
@@ -368,6 +376,21 @@ function readPackageVersion() {
   }
 }
 
-const started = Date.now()
-main()
-log(`finished in ${((Date.now() - started) / 1000).toFixed(1)}s`)
+function startedFromCli() {
+  const entry = process.argv[1]
+  if (entry == null) {
+    return false
+  }
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url))
+  }
+  catch {
+    return false
+  }
+}
+
+if (startedFromCli()) {
+  const started = Date.now()
+  main()
+  log(`finished in ${((Date.now() - started) / 1000).toFixed(1)}s`)
+}

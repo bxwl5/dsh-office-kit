@@ -303,24 +303,15 @@ function statusOf(python: PythonInspection): RuntimeStatus {
   }
 }
 
-/** Inspect every candidate; return the first interpreter that proves it has all dependencies. */
-export async function inspectRuntime(configFile = officePaths().configFile): Promise<RuntimeStatus> {
-  let compatible: PythonInspection | undefined
-  let last: PythonInspection | undefined
-  for (const candidate of [...candidates(configFile), ...await launcherInterpreters()]) {
-    for (const expanded of await expandLauncher(candidate)) {
-      if (expanded !== candidate && !isFile(expanded))
-        continue
-      const inspection = await inspectPython(expanded)
-      if (inspection.compatible && inspection.missing.length === 0)
-        return statusOf(inspection)
-      if (inspection.compatible && compatible == null)
-        compatible = inspection
-      last = inspection
-    }
-  }
+/** Pick the best interpreter: all dependencies first, then compatible-only, else none. */
+export function selectRuntime(inspections: readonly PythonInspection[]): RuntimeStatus {
+  const ready = inspections.find(inspection => inspection.compatible && inspection.missing.length === 0)
+  if (ready != null)
+    return statusOf(ready)
+  const compatible = inspections.find(inspection => inspection.compatible)
   if (compatible != null)
     return statusOf(compatible)
+  const last = inspections[inspections.length - 1]
   return {
     state: 'no-interpreter',
     packages: [],
@@ -328,6 +319,22 @@ export async function inspectRuntime(configFile = officePaths().configFile): Pro
     remedy: runtimeRemedy(),
     ...(last?.error == null ? {} : { error: last.error }),
   }
+}
+
+/** Inspect candidates in priority order; the first fully-provisioned interpreter wins. */
+export async function inspectRuntime(configFile = officePaths().configFile): Promise<RuntimeStatus> {
+  const seen: PythonInspection[] = []
+  for (const candidate of [...candidates(configFile), ...await launcherInterpreters()]) {
+    for (const expanded of await expandLauncher(candidate)) {
+      if (expanded !== candidate && !isFile(expanded))
+        continue
+      const inspection = await inspectPython(expanded)
+      seen.push(inspection)
+      if (inspection.compatible && inspection.missing.length === 0)
+        return selectRuntime(seen)
+    }
+  }
+  return selectRuntime(seen)
 }
 
 /** Run postinstall.mjs as a child process; resolve with an error summary or undefined. */

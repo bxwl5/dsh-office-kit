@@ -280,18 +280,13 @@ function statusOf(python) {
 		remedy: runtimeRemedy()
 	};
 }
-/** Inspect every candidate; return the first interpreter that proves it has all dependencies. */
-async function inspectRuntime(configFile = officePaths().configFile) {
-	let compatible;
-	let last;
-	for (const candidate of [...candidates(configFile), ...await launcherInterpreters()]) for (const expanded of await expandLauncher(candidate)) {
-		if (expanded !== candidate && !isFile(expanded)) continue;
-		const inspection = await inspectPython(expanded);
-		if (inspection.compatible && inspection.missing.length === 0) return statusOf(inspection);
-		if (inspection.compatible && compatible == null) compatible = inspection;
-		last = inspection;
-	}
+/** Pick the best interpreter: all dependencies first, then compatible-only, else none. */
+function selectRuntime(inspections) {
+	const ready = inspections.find((inspection) => inspection.compatible && inspection.missing.length === 0);
+	if (ready != null) return statusOf(ready);
+	const compatible = inspections.find((inspection) => inspection.compatible);
 	if (compatible != null) return statusOf(compatible);
+	const last = inspections[inspections.length - 1];
 	return {
 		state: "no-interpreter",
 		packages: [],
@@ -299,6 +294,17 @@ async function inspectRuntime(configFile = officePaths().configFile) {
 		remedy: runtimeRemedy(),
 		...last?.error == null ? {} : { error: last.error }
 	};
+}
+/** Inspect candidates in priority order; the first fully-provisioned interpreter wins. */
+async function inspectRuntime(configFile = officePaths().configFile) {
+	const seen = [];
+	for (const candidate of [...candidates(configFile), ...await launcherInterpreters()]) for (const expanded of await expandLauncher(candidate)) {
+		if (expanded !== candidate && !isFile(expanded)) continue;
+		const inspection = await inspectPython(expanded);
+		seen.push(inspection);
+		if (inspection.compatible && inspection.missing.length === 0) return selectRuntime(seen);
+	}
+	return selectRuntime(seen);
 }
 /** Run postinstall.mjs as a child process; resolve with an error summary or undefined. */
 function runPostinstall() {
