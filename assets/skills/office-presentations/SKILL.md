@@ -4,7 +4,7 @@ description: Create, inspect, edit, and render PowerPoint .pptx slide decks with
 
 # Presentations (.pptx)
 
-Build local PowerPoint decks with native text, tables, charts, and images, then render them to verify layout. This skill uses `python-pptx`; it does not use the Codex `@oai/artifact-tool` runtime and does not edit Google Slides.
+Build local PowerPoint decks with native text, tables, charts, and images, then render them to verify layout. This skill uses `python-pptx`; it does not use the `@oai/artifact-tool` runtime and does not edit Google Slides.
 
 ## Before any file work
 
@@ -106,5 +106,5 @@ If the render shows overlap, fix coordinates and re-render. Do not claim a deck 
 - Slide master, theme, template, or layout editing.
 - Animations, transitions, speaker notes, hyperlinks, audio/video, SmartArt.
 - Editing existing chart data in place, or replacing table cells in place.
-- Codex `@oai/artifact-tool` helpers, montage/integrity gates, or template-fidelity workflows.
+- `@oai/artifact-tool` helpers, montage/integrity gates, or template-fidelity workflows.
 - PowerPoint-perfect pagination; rendering is a fidelity check.

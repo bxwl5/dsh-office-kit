@@ -125,6 +125,7 @@
     "@deepseek-ai/dsh-workspace": "catalog:dsh",
     "@types/node": "catalog:types",
     "@types/react": "catalog:react",
+    "@types/react-dom": "catalog:react",
     "bumpp": "catalog:cli",
     "eslint": "catalog:cli",
     "nano-staged": "catalog:cli",

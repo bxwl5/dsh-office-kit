@@ -8,9 +8,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type { OfficeFeatureId } from '../features'
+import type { AnnotationController, AnnotationInjected, PendingAnnotation } from './types'
 import { rankByName } from '@deepseek-ai/dsh-client-ui-primitives'
 import { featureByCommand, featureById, OFFICE_FEATURES } from '../features'
-import { OFFICE_CHIP, OFFICE_CHIP_SLOT, OFFICE_NS, OFFICE_SOURCE } from './constants'
+import { annotationRule } from './annotation'
+import { AnnotationReference } from './annotation-reference'
+import { ANNOTATION_ID, ANNOTATION_NODE, ANNOTATION_ORDER, ANNOTATION_PRIORITY, ANNOTATION_SLOT, FILE_ADDRESS_PREFIX, OFFICE_CHIP, OFFICE_CHIP_SLOT, OFFICE_NS, OFFICE_SOURCE } from './constants'
+import { DocumentAnnotation } from './document-annotation'
 import { OFFICE_ICONS } from './icons'
 import { OfficeReference } from './office-reference'
 import { mountOfficeStyles } from './styles'
@@ -25,9 +29,8 @@ export const inject = [
   'remote.skills',
   'sidebarRight',
   'uiConversation',
+  'conversation',
 ]
-
-const FILE_ADDRESS_PREFIX = 'dsh-resource://file/'
 
 const zh = {
   'menu.group': '办公',
@@ -39,6 +42,27 @@ const zh = {
   'menu.presentations.description': '创建、编辑、渲染和导出 PPTX 演示文稿',
   'menu.spreadsheets.label': '电子表格',
   'menu.spreadsheets.description': '创建、编辑、计算和导出 XLSX 电子表格',
+  'annotation.ask': '请求修改',
+  'annotation.cancel': '取消',
+  'annotation.send': '发送',
+  'annotation.add': '添加标注',
+  'annotation.placeholder': '说明要怎么改…',
+  'annotation.page': '第 {page} 页',
+  'annotation.count': '{count} 条注释',
+  'annotation.remove': '删除第 {index} 条注释',
+  'annotation.image': '位置截图：{name}',
+  'annotation.help': '悬停吸附段落，点击输入要求；长按拖动框选区域，松开添加标注。方向键选择，Enter 确认，Esc 退出。',
+  'annotation.unavailable': '等待文档页面渲染；当前预览不支持标注',
+  'annotation.capturing': '正在截图…',
+  'annotation.captureFailed': '截图失败，请重新选择区域',
+  'annotation.intakeUnavailable': '当前 DSH 版本不支持从侧栏添加截图附件，PDF 标注已禁用',
+  'annotation.imageLimit': '截图超过当前模型的数量或大小限制，请减少标注后重试',
+  'annotation.sendFailed': '未能加入会话，请重试；标注仍保留',
+  'annotation.draftReady': '标注和截图已保留在会话输入框，请在那里确认发送',
+  'annotation.invalid': '标注内容无效，请重新添加',
+  'annotation.tooLarge': '标注内容过长，请减少后重试',
+  'annotation.emptyPage': '页面尚未渲染，请重试',
+  'annotation.emptyRegion': '请选择页面内的区域',
 } as const
 
 const en: Record<keyof typeof zh, string> = {
@@ -51,6 +75,27 @@ const en: Record<keyof typeof zh, string> = {
   'menu.presentations.description': 'Create, edit, render, and export PPTX decks',
   'menu.spreadsheets.label': 'Spreadsheets',
   'menu.spreadsheets.description': 'Create, edit, calculate, and export XLSX workbooks',
+  'annotation.ask': 'Request changes',
+  'annotation.cancel': 'Cancel',
+  'annotation.send': 'Send',
+  'annotation.add': 'Add annotation',
+  'annotation.placeholder': 'Describe the change…',
+  'annotation.page': 'page {page}',
+  'annotation.count': '{count} annotations',
+  'annotation.remove': 'Remove annotation {index}',
+  'annotation.image': 'Location screenshot: {name}',
+  'annotation.help': 'Hover to select a paragraph; click to comment. Hold and drag to select a region. Arrow keys select, Enter confirms, Esc exits.',
+  'annotation.unavailable': 'Waiting for rendered pages; this preview cannot be annotated yet',
+  'annotation.capturing': 'Capturing…',
+  'annotation.captureFailed': 'Screenshot failed; please select the region again',
+  'annotation.intakeUnavailable': 'This DSH version cannot add screenshots from the sidebar; PDF annotation is disabled',
+  'annotation.imageLimit': 'Screenshots exceed the current model’s count or size limits; remove some annotations and retry',
+  'annotation.sendFailed': 'Could not add annotations to the conversation; your annotations are retained',
+  'annotation.draftReady': 'Annotations and screenshots are kept in the conversation input; confirm sending there',
+  'annotation.invalid': 'Invalid annotation; please add it again',
+  'annotation.tooLarge': 'Annotations are too long; remove some and retry',
+  'annotation.emptyPage': 'The page has not rendered yet; please retry',
+  'annotation.emptyRegion': 'Select a region inside the page',
 }
 
 interface OfficeSkillSummary {
@@ -125,6 +170,7 @@ export function apply(ctx: ClientContext): void {
   const remoteSkills = (ctx.remote as unknown as { skills: OfficeSkillCatalog }).skills
   const t = ctx.locale.bind(OFFICE_NS)
   const entries = new Map<string, CatalogEntry>()
+  const pendingAnnotations = new Map<string, Map<string, readonly PendingAnnotation[]>>()
 
   ctx.effect(() => mountOfficeStyles(), 'office-suite: styles')
   ctx.effect(() => ctx.locale.register(OFFICE_NS, { zh, en }), 'office-suite: dictionaries')
@@ -284,6 +330,54 @@ export function apply(ctx: ClientContext): void {
     }),
   }, OfficeReference)), 'office-suite: transcript chip slot')
 
+  function annotationDependencies(sessionId: string): AnnotationInjected {
+    const controller = ctx.conversation as unknown as Partial<AnnotationController>
+    const compatible = typeof controller.createDrafts === 'function'
+      && typeof controller.releaseDraftAttachments === 'function'
+      && typeof controller.resolveDraftAttachments === 'function'
+    let pending = pendingAnnotations.get(sessionId)
+    if (!pending) {
+      pending = new Map()
+      pendingAnnotations.set(sessionId, pending)
+    }
+    return {
+      pendingAnnotations: pending,
+      // ponytail: current DSH concrete File intake only, replace with outward intake API when exported.
+      intake: compatible
+        ? {
+            create: files => controller.createDrafts!(sessionId as never, files),
+            release: drafts => controller.releaseDraftAttachments!(drafts),
+            images: ids => controller.resolveDraftAttachments!(ids).filter(item => item.kind === 'image').map(item => item.file),
+          }
+        : undefined,
+      openAnnotation: (target) => {
+        try {
+          const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
+          ctx.sidebarRight.openResource(fileAddressFor(sessionId, cwd, target))
+        }
+        catch (error) {
+          console.error('[dsh-office-suite] annotation preview failed:', error)
+        }
+      },
+    }
+  }
+
+  ctx.effect(() => ctx.uiConversation.userText.register(annotationRule), 'office-suite: annotations')
+  ctx.effect(() => ctx.slots.inject(OFFICE_CHIP_SLOT, () => ctx.slots.register({
+    name: OFFICE_CHIP_SLOT,
+    key: ANNOTATION_NODE,
+    priority: ANNOTATION_PRIORITY,
+    locale: OFFICE_NS,
+    inject: annotationDependencies,
+  }, AnnotationReference)), 'office-suite: annotation references')
+  ctx.effect(() => ctx.slots.inject(ANNOTATION_SLOT, () => ctx.slots.register({
+    name: ANNOTATION_SLOT,
+    id: ANNOTATION_ID,
+    order: ANNOTATION_ORDER,
+    locale: OFFICE_NS,
+    inject: annotationDependencies,
+  }, DocumentAnnotation)), 'office-suite: annotation tool')
+
   const inputTriggers = ctx.inputTriggers
   ctx.effect(() => {
     const unregister = inputTriggers.registerSource(source)
@@ -292,6 +386,7 @@ export function apply(ctx: ClientContext): void {
       for (const entry of entries.values())
         entry.abort.abort()
       entries.clear()
+      pendingAnnotations.clear()
     }
   }, 'office-suite: slash source')
 }

@@ -4,7 +4,7 @@ description: Create, inspect, edit, recalculate, and render Excel .xlsx workbook
 
 # Spreadsheets (.xlsx)
 
-Build local Excel workbooks with values, formulas, styles, charts, and images; inspect existing workbooks; recalculate with Excel when cached values are required. This skill does not use Codex `@oai/artifact-tool` and does not edit Google Sheets.
+Build local Excel workbooks with values, formulas, styles, charts, and images; inspect existing workbooks; recalculate with Excel when cached values are required. This skill does not use `@oai/artifact-tool` and does not edit Google Sheets.
 
 ## Before any file work
 
@@ -107,4 +107,4 @@ The renderer prefers Microsoft Excel COM on Windows (exports each sheet to PDF) 
 - Pivot tables, Power Query, macros/VBA, data validation, conditional formatting, slicers, external workbook links.
 - Formula evaluation without Microsoft Excel; `recalc` is Windows + Excel only.
 - Exact Excel rendering fidelity on LibreOffice; charts from foreign producers may not survive editing.
-- Codex `@oai/artifact-tool` helpers or artifact-tool workbook gates.
+- `@oai/artifact-tool` helpers or artifact-tool workbook gates.

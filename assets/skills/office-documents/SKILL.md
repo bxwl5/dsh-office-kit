@@ -4,7 +4,7 @@ description: Create, inspect, edit, and render Word .docx documents with the bun
 
 # Documents (.docx)
 
-Create, read, edit, and render local Word documents. This skill produces Office Open XML files; it does not edit Google Docs and does not use the Codex/artifact-tool runtime.
+Create, read, edit, and render local Word documents. This skill produces Office Open XML files; it does not edit Google Docs and does not use the artifact-tool runtime.
 
 ## Before any file work
 
