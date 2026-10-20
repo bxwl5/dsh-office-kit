@@ -42,6 +42,13 @@ from ooxml_helpers import (  # noqa: E402
     text_of,
 )
 
+# Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 TITLE_OUTSIDE_MARGIN_IN = 0.0
 DEFAULT_TITLE_FLOOR_PT = 28.0
 DEFAULT_BODY_FLOOR_PT = 14.0

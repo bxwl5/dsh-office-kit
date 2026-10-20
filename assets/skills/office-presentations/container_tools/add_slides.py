@@ -25,6 +25,13 @@ import json
 import sys
 from pathlib import Path
 
+# Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 PACKAGE_ROOT = Path(__file__).resolve().parents[4]
 CLI_DIR = PACKAGE_ROOT / "python"
 COUNTERS = ("slides", "bullets", "tables", "charts", "images")

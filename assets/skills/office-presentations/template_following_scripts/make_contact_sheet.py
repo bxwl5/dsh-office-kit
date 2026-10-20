@@ -15,6 +15,13 @@ import math
 import sys
 from pathlib import Path
 
+# Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "container_tools"))
 
 

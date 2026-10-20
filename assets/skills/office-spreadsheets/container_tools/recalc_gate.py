@@ -28,6 +28,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 if hasattr(sys.stdout, "reconfigure"):
     # Legacy console codepages (cp936, cp1252) must not abort a report.
     sys.stdout.reconfigure(errors="replace")
@@ -116,23 +123,28 @@ def _referenced_sheets(formula: str) -> list[str]:
     return found
 
 
-def _recalculate(python: str, cli: Path, source: Path, out: Path) -> tuple[bool, str | None]:
+def _recalculate(python: str, cli: Path, source: Path, out: Path) -> tuple[bool, str | None, str | None]:
     command = [python, str(cli), "xlsx", "recalc", "--input", str(source), "--out", str(out)]
     try:
         completed = subprocess.run(command, capture_output=True, text=True, timeout=300)
     except FileNotFoundError as error:
-        return False, f"cannot start the helper CLI: {error}"
+        return False, f"cannot start the helper CLI: {error}", None
     except subprocess.TimeoutExpired:
-        return False, "recalculation timed out after 300 seconds"
+        return False, "recalculation timed out after 300 seconds", None
     if completed.returncode == 0 and out.is_file():
-        return True, None
+        renderer = None
+        try:
+            renderer = json.loads(completed.stdout).get("renderer")
+        except (json.JSONDecodeError, AttributeError):
+            renderer = None
+        return True, None, renderer
     message = (completed.stderr or completed.stdout or "").strip()
     try:
         parsed = json.loads(message)
         message = str(parsed.get("error", message))
     except json.JSONDecodeError:
         pass
-    return False, message or f"helper CLI exited with code {completed.returncode}"
+    return False, message or f"helper CLI exited with code {completed.returncode}", None
 
 
 def _ignored(entries: str | None) -> dict[str, set[str]]:
@@ -176,10 +188,10 @@ def main() -> int:
         if not cli.is_file():
             recalc_error = f"helper CLI not found: {cli}; pass --cli or use --no-recalc"
         else:
-            recalculated, recalc_error = _recalculate(args.python, cli, source, out)
+            recalculated, recalc_error, renderer = _recalculate(args.python, cli, source, out)
             if recalculated:
                 checked = out
-                engine = "microsoft excel"
+                engine = renderer or "recalculation engine"
 
     try:
         cached = _cached_values(checked, cells) if cells else {}

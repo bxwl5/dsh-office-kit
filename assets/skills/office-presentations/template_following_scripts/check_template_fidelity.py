@@ -20,6 +20,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "container_tools
 
 from ooxml_helpers import box, has_visible_text, is_picture, overlap_ratio, text_of  # noqa: E402
 
+# Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 PLACEHOLDER_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
     for pattern in (

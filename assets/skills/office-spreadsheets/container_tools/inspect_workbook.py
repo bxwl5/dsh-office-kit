@@ -22,6 +22,13 @@ import sys
 import zipfile
 from pathlib import Path
 
+# Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 if hasattr(sys.stdout, "reconfigure"):
     # Legacy console codepages (cp936, cp1252) must not abort a report.
     sys.stdout.reconfigure(errors="replace")

@@ -23,6 +23,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "container_tools
 
 from ooxml_helpers import box, placeholder_kind, slide_size_in  # noqa: E402
 
+# Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 PLACEHOLDER_ALIASES = {
     "title": ("TITLE", "CENTER_TITLE"),
     "subtitle": ("SUBTITLE",),

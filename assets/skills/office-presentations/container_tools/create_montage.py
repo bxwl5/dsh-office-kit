@@ -13,6 +13,13 @@ import json
 import sys
 from pathlib import Path
 
+# Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 try:
     from PIL import Image, ImageDraw, ImageFont
 except ImportError:  # pragma: no cover - whitelist dependency, but fail clearly

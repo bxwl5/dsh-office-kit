@@ -20,6 +20,13 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
 
+# Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 C_NS = "{http://schemas.openxmlformats.org/drawingml/2006/chart}"

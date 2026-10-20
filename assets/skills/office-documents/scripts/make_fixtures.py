@@ -24,6 +24,13 @@ import docx_kit as kit
 from docx import Document
 from docx.shared import Inches
 
+# Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 
 def base_document(title: str, paragraphs: list[str]) -> Document:
     document = Document()

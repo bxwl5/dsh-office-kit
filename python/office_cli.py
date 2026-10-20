@@ -21,7 +21,18 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
-VERSION = "0.1.0"
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _package_version() -> str:
+    try:
+        data = json.loads((PACKAGE_ROOT / "package.json").read_text(encoding="utf-8"))
+        return str(data["version"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return "0.0.0"
+
+
+VERSION = _package_version()
 
 # Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
 for _stream in (sys.stdout, sys.stderr):
@@ -339,6 +350,16 @@ def _docx_add_equation(paragraph, latex: str) -> bool:
         return False
 
 
+def _docx_mark_header_row(row) -> None:
+    """Repeat this row across pages and mark it as a header for assistive tech."""
+    from docx.oxml.ns import qn
+
+    properties = row._tr.get_or_add_trPr()
+    if properties.find(qn("w:tblHeader")) is None:
+        header = properties.makeelement(qn("w:tblHeader"), {})
+        properties.append(header)
+
+
 def _docx_add_block(document, block: dict[str, Any], counters: dict[str, int]) -> None:
     from docx.shared import Inches, Pt
 
@@ -391,6 +412,7 @@ def _docx_add_block(document, block: dict[str, Any], counters: dict[str, int]) -
                 for paragraph in cells[index].paragraphs:
                     for run in paragraph.runs:
                         run.bold = True
+            _docx_mark_header_row(table.rows[0])
         for row in rows:
             cells = table.add_row().cells
             for index, value in enumerate(row):
@@ -459,6 +481,10 @@ def docx_create(spec: dict[str, Any], out: Path) -> dict[str, Any]:
     if spec.get("author") or spec.get("title"):
         document.core_properties.title = str(spec.get("title", ""))
         document.core_properties.author = str(spec.get("author", ""))
+        # A fresh python-docx document carries the library name in comments; a
+        # delivered file should not advertise the tool that wrote it.
+        document.core_properties.comments = str(spec.get("comments", ""))
+        document.core_properties.last_modified_by = str(spec.get("author", ""))
     if spec.get("header"):
         document.sections[0].header.paragraphs[0].text = str(spec["header"])
     if spec.get("footer"):
@@ -659,17 +685,21 @@ def pdf_create(spec: dict[str, Any], out: Path) -> dict[str, Any]:
         author=str(spec.get("author", "")),
     )
     counters = {key: 0 for key in ("headings", "paragraphs", "list_items", "tables", "images")}
+    following: list[dict[str, Any]] = []
+    for page in spec.get("pages", []):
+        if isinstance(page, dict):
+            following.extend(page.get("blocks", []))
+            if page.get("break", True):
+                following.append({"type": "page_break"})
+    following.extend(spec.get("blocks", []))
+    kinds = {str(block.get("type", "")).lower() for block in following if isinstance(block, dict)}
     blocks: list[dict[str, Any]] = []
-    if spec.get("title"):
+    # `title` is metadata; only draw it when the blocks do not already carry one.
+    if spec.get("title") and "title" not in kinds:
         blocks.append({"type": "title", "text": spec["title"]})
     if spec.get("subtitle"):
         blocks.append({"type": "paragraph", "text": spec["subtitle"]})
-    for page in spec.get("pages", []):
-        if isinstance(page, dict):
-            blocks.extend(page.get("blocks", []))
-            if page.get("break", True):
-                blocks.append({"type": "page_break"})
-    blocks.extend(spec.get("blocks", []))
+    blocks.extend(following)
     document.build(_pdf_flowables(blocks, font, counters))
     return {"ok": True, "kind": "pdf", "command": "create", "output": str(out), "font": font, "counts": counters}
 
@@ -849,6 +879,10 @@ def pptx_create(spec: dict[str, Any], out: Path) -> dict[str, Any]:
     prs.slide_height = int(7.5 * 914400)
     prs.core_properties.title = str(spec.get("title", ""))
     prs.core_properties.author = str(spec.get("author", "DSH Office Suite"))
+    # python-pptx leaves its own name in the properties; a delivered deck should
+    # carry the author's, not the library's.
+    prs.core_properties.comments = str(spec.get("comments", ""))
+    prs.core_properties.last_modified_by = str(spec.get("author", "DSH Office Suite"))
     counters = {key: 0 for key in ("slides", "bullets", "tables", "charts", "images")}
     for slide_spec in spec.get("slides", []):
         if isinstance(slide_spec, dict):

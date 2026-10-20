@@ -16,6 +16,13 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
 
+# Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 REL_NS = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 CT_NS = "{http://schemas.openxmlformats.org/package/2006/content-types}"
 P_NS = "{http://schemas.openxmlformats.org/presentationml/2006/main}"

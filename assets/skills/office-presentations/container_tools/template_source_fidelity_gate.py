@@ -30,6 +30,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ooxml_helpers import box, is_picture, slide_size_in  # noqa: E402
 
+# Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 EMU_PER_INCH = 914400
 DEFAULT_TOLERANCE_EMU = 9144  # 0.01 in
 

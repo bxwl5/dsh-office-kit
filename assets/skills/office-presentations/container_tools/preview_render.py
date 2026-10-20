@@ -48,6 +48,13 @@ from ooxml_helpers import (  # noqa: E402
     WIDE_CHAR,
 )
 
+# Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 INK = (0.13, 0.15, 0.18)
 MUTED = (0.42, 0.45, 0.50)
 RULE = (0.80, 0.82, 0.85)

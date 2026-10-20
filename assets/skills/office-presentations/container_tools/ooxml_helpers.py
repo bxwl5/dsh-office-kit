@@ -23,6 +23,13 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
+# Windows consoles default to a legacy code page; every payload is UTF-8 JSON.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 EMU_PER_INCH = 914400
 
 # Anything that renders about a full em wide and wraps mid-token.
