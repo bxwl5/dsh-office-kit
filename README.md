@@ -26,7 +26,7 @@ dsh plugin add dsh-office-kit
 ```
 
 - 在 **设置 → 插件** 中启用。
-- 需要 DSH ≥ `0.2.1-rc.2`、Node.js ≥ `20`、Python `3.10`–`3.13`。
+- 需要 DSH ≥ `0.2.1-rc.2`、Python(无需，没有将自动安装) `3.10`–`3.13`。
 - Windows 缺少兼容 Python 时自动安装；macOS / Linux 使用现有 Python。
 
 ## 特性
@@ -37,7 +37,6 @@ dsh plugin add dsh-office-kit
 - 📊 **电子表格**：`/spreadsheets` 创建、读取和编辑 XLSX，支持公式、样式、图表、冻结窗格与重算。
 - 🖍️ **侧边栏标注**：在 PDF、DOC/DOCX 预览中吸附段落或框选区域，批量提交修改要求。
 - 🔗 **会话引用**：通过 Chip 调用文档技能；注释链接可悬停查看文件名与要求，PDF 标注附选区截图。
-- 💻 **本地渲染**：基于 DSH Office 能力扩展，支持 Word、PDF、演示文稿与电子表格的本地预览。
 
 ## 🚀 快速开始
 
