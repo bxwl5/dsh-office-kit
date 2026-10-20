@@ -3,7 +3,7 @@ import type { SkillCandidate, SkillDefinition, SkillProvider } from '@deepseek-a
 import type { RuntimeStatus } from './python'
 import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { BUNDLED_SKILL_RANK } from '@deepseek-ai/dsh-skill'
@@ -142,7 +142,7 @@ export function apply(ctx: Context): void {
       const parsed = parseSkill(raw, path)
       const runtime = await ensureRuntime(paths.configFile)
       const pythonLine = runtime.state === 'ok' && runtime.python != null
-        ? `\n\n## Office runtime\n\nUse these verified absolute paths for every helper command. Quote paths that contain spaces.\n\n\`\`\`json\n${JSON.stringify({ python: runtime.python.path, cli: paths.cli, version: runtime.python.version }, null, 2)}\n\`\`\``
+        ? `\n\n## Office runtime\n\nUse these verified absolute paths for every helper command. Quote paths that contain spaces. \`skill\` is this skill's own directory: every script it names lives at \`<skill>/scripts/...\`; \`shared\` holds the cross-format workflow notes.\n\n\`\`\`json\n${JSON.stringify({ python: runtime.python.path, cli: paths.cli, skill: dirname(path).split('\\').join('/'), shared: join(paths.skillsDir, 'shared').split('\\').join('/'), version: runtime.python.version }, null, 2)}\n\`\`\``
         : `\n\n## Office runtime\n\nNo working Python runtime is available: ${runtimeReason(runtime)}. Do not run helper commands or claim success. Tell the user to run \`${runtime.remedy}\`, then call \`office_status\` again.`
       const { rank: _rank, locator: _locator, ...summary } = candidate
       return {

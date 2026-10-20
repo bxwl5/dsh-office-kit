@@ -3,15 +3,15 @@ import type { CSSProperties, PointerEvent, ReactElement } from 'react'
 import type { OFFICE_NS } from './constants'
 import type { AnnotationInjected, AnnotationRect, AnnotationSelection, PendingAnnotation } from './types'
 import { useEffect, useId, useRef, useState } from 'react'
-import { annotationPreview, canvasAt, canvasParagraphs, captureAnnotation, intersectRect, normalizedRegion, paddedRect, paragraphAtPoint, sendAnnotations } from './annotation'
-import { ANNOTATION_CANVAS_SELECTOR, ANNOTATION_HOLD_MS, ANNOTATION_MAX_ITEMS, ANNOTATION_MAX_TEXT, ANNOTATION_MIN_REGION } from './constants'
+import { annotationPreview, canvasAt, canvasParagraphs, captureAnnotation, intersectRect, normalizedRegion, paddedRect, paragraphAtPoint, sendAnnotations, spreadsheetAt } from './annotation'
+import { ANNOTATION_CANVAS_SELECTOR, ANNOTATION_HOLD_MS, ANNOTATION_MAX_ITEMS, ANNOTATION_MAX_TEXT, ANNOTATION_MIN_REGION, ANNOTATION_SPREADSHEET_CANVAS_SELECTOR } from './constants'
 import { fillTemplate } from './quote'
 
 type Props = PropsRuntime<'sidebar.right.tab.document.actions'> & PropsLocale<typeof OFFICE_NS> & AnnotationInjected
 
 /** This slot is rendered by the document header; every overlay stays in this React subtree. */
 export function DocumentAnnotation(props: Props): ReactElement | null {
-  if (!/\.(?:pdf|docx?)$/iu.test(props.absolutePath))
+  if (!/\.(?:pdf|docx?|pptx|xlsx)$/iu.test(props.absolutePath))
     return null
   return <AnnotationTool key={props.absolutePath} {...props} />
 }
@@ -36,10 +36,14 @@ function AnnotationTool({ absolutePath, pendingAnnotations, intake, inputActions
   const input = useInput(state => state)
   const limits = useProjection('imageLimits')
   const isPdf = /\.pdf$/iu.test(absolutePath)
+  const isSpreadsheet = /\.xlsx$/iu.test(absolutePath)
+  /** Formats whose page/region is only legible as a screenshot attachment. */
+  const captures = isPdf || isSpreadsheet
+  const canvasSelector = isSpreadsheet ? ANNOTATION_SPREADSHEET_CANVAS_SELECTOR : ANNOTATION_CANVAS_SELECTOR
   const fileName = absolutePath.replace(/\\/gu, '/').split('/').pop() ?? absolutePath
   const revision = useRef(0)
   const hold = useRef<ReturnType<typeof setTimeout>>()
-  const gesture = useRef<{ x: number, y: number, lastX: number, lastY: number, canvas: HTMLCanvasElement, page: number, region: boolean }>()
+  const gesture = useRef<{ x: number, y: number, lastX: number, lastY: number, canvas: HTMLCanvasElement, page?: number, region: boolean }>()
   const cache = useRef<{ canvas: HTMLCanvasElement, box: AnnotationRect, paragraphs: ReturnType<typeof canvasParagraphs> }>()
   const disabled = input.phase !== 'plain'
 
@@ -82,7 +86,7 @@ function AnnotationTool({ absolutePath, pendingAnnotations, intake, inputActions
         const bottom = Math.min(rect.bottom, window.innerHeight)
         const left = Math.max(0, rect.left)
         const right = Math.min(rect.right, window.innerWidth)
-        const canvas = [...root.querySelectorAll<HTMLCanvasElement>(ANNOTATION_CANVAS_SELECTOR)].find(canvas => canvas.getBoundingClientRect().width > 0)
+        const canvas = [...root.querySelectorAll<HTMLCanvasElement>(canvasSelector)].find(canvas => canvas.getBoundingClientRect().width > 0)
         const visible = root.isConnected && !root.closest('[hidden], [aria-hidden="true"]') && getComputedStyle(root).visibility === 'visible'
         setBounds(visible && rect.height > 40 && canvas && right > left && bottom > top
           ? { left, top, width: right - left, height: bottom - top }
@@ -147,7 +151,7 @@ function AnnotationTool({ absolutePath, pendingAnnotations, intake, inputActions
     const root = preview.current
     if (!root)
       return
-    let scroll = root.querySelector(ANNOTATION_CANVAS_SELECTOR)?.parentElement
+    let scroll = root.querySelector(canvasSelector)?.parentElement
     while (scroll && scroll !== root && !/auto|scroll/u.test(getComputedStyle(scroll).overflowY))
       scroll = scroll.parentElement
     scroll?.scrollBy({ left: x, top: y })
@@ -167,8 +171,16 @@ function AnnotationTool({ absolutePath, pendingAnnotations, intake, inputActions
     return () => node.removeEventListener('wheel', wheel)
   }, [active, bounds])
 
+  function surfaceAt(x: number, y: number): { canvas: HTMLCanvasElement, page?: number } | undefined {
+    const root = preview.current
+    if (!root)
+      return undefined
+    return isSpreadsheet ? spreadsheetAt(root, x, y) : canvasAt(root, x, y)
+  }
+
   function paragraphAt(x: number, y: number): AnnotationSelection | undefined {
-    if (!preview.current)
+    // A workbook grid has no text layer: only a dragged region can locate anything.
+    if (isSpreadsheet || !preview.current)
       return undefined
     const page = canvasAt(preview.current, x, y)
     if (!page)
@@ -190,13 +202,14 @@ function AnnotationTool({ absolutePath, pendingAnnotations, intake, inputActions
     if (!box)
       return undefined
     const paragraphs = cache.current?.canvas === start.canvas ? cache.current.paragraphs : canvasParagraphs(start.canvas)
-    return { canvas: start.canvas, page: start.page, box, region: normalizedRegion(box, start.canvas.getBoundingClientRect()), text: paragraphs.filter(item => (item.rects ?? [item.box]).some(rect => intersectRect(rect, box))).map(item => item.text).join('\n').slice(0, ANNOTATION_MAX_TEXT) }
+    const text = isSpreadsheet ? '' : paragraphs.filter(item => (item.rects ?? [item.box]).some(rect => intersectRect(rect, box))).map(item => item.text).join('\n').slice(0, ANNOTATION_MAX_TEXT)
+    return { canvas: start.canvas, page: start.page, box, region: normalizedRegion(box, start.canvas.getBoundingClientRect()), text }
   }
 
   function pointerDown(event: PointerEvent<HTMLDivElement>): void {
-    if (event.button !== 0 || !preview.current || (isPdf && !intake))
+    if (event.button !== 0 || !preview.current || (captures && !intake))
       return
-    const page = canvasAt(preview.current, event.clientX, event.clientY)
+    const page = surfaceAt(event.clientX, event.clientY)
     if (!page)
       return
     event.preventDefault()
@@ -238,11 +251,12 @@ function AnnotationTool({ absolutePath, pendingAnnotations, intake, inputActions
     const region = page ? normalizedRegion(box, page) : value.region
     const frozen = { ...value, box, region }
     setSelection(frozen)
-    if (!isPdf)
+    if (!captures)
       return
     setCapturing(true)
     try {
-      const file = await captureAnnotation(frozen, `${fileName}-p${value.page}-${Date.now()}.png`, limits?.maxImagePixels, limits?.maxImageDimension)
+      const label = value.page === undefined ? 'region' : `p${value.page}`
+      const file = await captureAnnotation(frozen, `${fileName}-${label}-${Date.now()}.png`, limits?.maxImagePixels, limits?.maxImageDimension)
       if (revision.current === current)
         setImage(file)
     }
@@ -269,7 +283,7 @@ function AnnotationTool({ absolutePath, pendingAnnotations, intake, inputActions
   }
 
   function add(): void {
-    if (!selection || !requirement.trim() || (isPdf && !image) || items.length >= ANNOTATION_MAX_ITEMS)
+    if (!selection || !requirement.trim() || (captures && !image) || items.length >= ANNOTATION_MAX_ITEMS)
       return
     const annotation = {
       target: absolutePath,
@@ -279,6 +293,8 @@ function AnnotationTool({ absolutePath, pendingAnnotations, intake, inputActions
       requirement: requirement.trim(),
       region: selection.region,
       imageName: image?.name,
+      // The workbook preview exposes no selection API we control, so the region stays raw.
+      ...(isSpreadsheet ? { unmapped: true as const } : {}),
     }
     setItems(previous => [...previous, { annotation, file: image }])
     dismiss()
@@ -342,8 +358,8 @@ function AnnotationTool({ absolutePath, pendingAnnotations, intake, inputActions
         type="button"
         className="dsh-office-annotate-toggle"
         aria-pressed={active}
-        disabled={!bounds || (isPdf && !intake)}
-        title={isPdf && !intake ? t('annotation.intakeUnavailable') : !bounds ? t('annotation.unavailable') : t('annotation.help')}
+        disabled={!bounds || (captures && !intake)}
+        title={captures && !intake ? t('annotation.intakeUnavailable') : !bounds ? t('annotation.unavailable') : t('annotation.help')}
         onClick={() => {
           setActive(value => !value)
           dismiss()
@@ -352,7 +368,7 @@ function AnnotationTool({ absolutePath, pendingAnnotations, intake, inputActions
       >
         {t('annotation.ask')}
       </button>
-      {isPdf && !intake && <span role="status" className="dsh-office-annotate-unavailable">{t('annotation.intakeUnavailable')}</span>}
+      {captures && !intake && <span role="status" className="dsh-office-annotate-unavailable">{t('annotation.intakeUnavailable')}</span>}
       {active && bounds && (
         <div
           ref={surface}
@@ -416,7 +432,7 @@ function AnnotationTool({ absolutePath, pendingAnnotations, intake, inputActions
                 event.preventDefault()
             }}
           />
-          <button type="submit" aria-label={t(capturing ? 'annotation.capturing' : 'annotation.add')} title={t(capturing ? 'annotation.capturing' : 'annotation.add')} disabled={!requirement.trim() || capturing || (isPdf && !image) || items.length >= ANNOTATION_MAX_ITEMS}>
+          <button type="submit" aria-label={t(capturing ? 'annotation.capturing' : 'annotation.add')} title={t(capturing ? 'annotation.capturing' : 'annotation.add')} disabled={!requirement.trim() || capturing || (captures && !image) || items.length >= ANNOTATION_MAX_ITEMS}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
         </form>

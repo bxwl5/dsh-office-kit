@@ -424,38 +424,6 @@ def _replace_in_paragraph(paragraph, find: str, replacement: str) -> int:
     return count
 
 
-def docx_edit(spec: dict[str, Any], input_path: Path, out: Path) -> dict[str, Any]:
-    from docx import Document
-
-    document = Document(str(input_path))
-    replace_count = 0
-    for item in spec.get("replace", []):
-        find = str(item.get("find", ""))
-        replacement = str(item.get("replace", ""))
-        if not find:
-            continue
-        for paragraph in _docx_iter_paragraphs(document):
-            replace_count += _replace_in_paragraph(paragraph, find, replacement)
-    counters = {key: 0 for key in ("headings", "paragraphs", "list_items", "tables", "images", "equations", "equation_fallbacks")}
-    _docx_add_blocks(document, spec.get("blocks", []), counters)
-    core = spec.get("core")
-    if isinstance(core, dict):
-        for key in ("title", "author", "subject", "keywords", "comments"):
-            if key in core:
-                setattr(document.core_properties, key, str(core[key]))
-    ensure_parent(str(out))
-    document.save(str(out))
-    return {
-        "ok": True,
-        "kind": "docx",
-        "command": "edit",
-        "input": str(input_path),
-        "output": str(out),
-        "replacements": replace_count,
-        "counts": counters,
-    }
-
-
 def _docx_has_equation(paragraph) -> bool:
     tag = "{http://schemas.openxmlformats.org/officeDocument/2006/math}oMath"
     return bool(paragraph._p.findall(f".//{tag}"))
@@ -667,45 +635,6 @@ def pdf_read(input_path: Path) -> dict[str, Any]:
     }
 
 
-def pdf_edit(spec: dict[str, Any], input_path: Path, out: Path) -> dict[str, Any]:
-    from pypdf import PdfReader, PdfWriter
-
-    writer = PdfWriter()
-    reader = PdfReader(str(input_path))
-    for page in reader.pages:
-        writer.add_page(page)
-    rotate = int(spec.get("rotate", 0))
-    targets = spec.get("pages")
-    if rotate:
-        for index, page in enumerate(writer.pages):
-            if targets is None or index in targets:
-                page.rotate(rotate)
-    for extra in spec.get("merge", []):
-        extra_reader = PdfReader(str(require_file(str(extra), "PDF to merge")))
-        for page in extra_reader.pages:
-            writer.add_page(page)
-    if spec.get("remove_pages"):
-        remove = set(int(value) for value in spec["remove_pages"])
-        writer = PdfWriter()
-        for index, page in enumerate(reader.pages):
-            if index not in remove:
-                writer.add_page(page)
-        for extra in spec.get("merge", []):
-            extra_reader = PdfReader(str(require_file(str(extra), "PDF to merge")))
-            for page in extra_reader.pages:
-                writer.add_page(page)
-    if isinstance(spec.get("metadata"), dict):
-        metadata = {}
-        for key, value in spec["metadata"].items():
-            name = str(key)
-            metadata[name if name.startswith("/") else f"/{name}"] = str(value)
-        writer.add_metadata(metadata)
-    ensure_parent(str(out))
-    with open(out, "wb") as handle:
-        writer.write(handle)
-    return {"ok": True, "kind": "pdf", "command": "edit", "input": str(input_path), "output": str(out), "page_count": len(writer.pages)}
-
-
 def pdf_render(input_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
     pages = rasterize_pdf(str(input_path), out_dir, dpi)
     return {"ok": True, "kind": "pdf", "command": "render", "input": str(input_path), "page_count": len(pages), "pages": pages}
@@ -912,38 +841,6 @@ def pptx_read(input_path: Path) -> dict[str, Any]:
     }
 
 
-def pptx_edit(spec: dict[str, Any], input_path: Path, out: Path) -> dict[str, Any]:
-    from pptx import Presentation
-
-    prs = Presentation(str(input_path))
-    replacements = 0
-    for item in spec.get("replace", []):
-        find = str(item.get("find", ""))
-        replacement = str(item.get("replace", ""))
-        if not find:
-            continue
-        for slide in prs.slides:
-            for shape in slide.shapes:
-                if not shape.has_text_frame:
-                    continue
-                for paragraph in shape.text_frame.paragraphs:
-                    for run in paragraph.runs:
-                        if find in run.text:
-                            run.text = run.text.replace(find, replacement)
-                            replacements += 1
-    counters = {key: 0 for key in ("slides", "bullets", "tables", "charts", "images")}
-    for slide_spec in spec.get("slides", []):
-        if isinstance(slide_spec, dict):
-            _pptx_add_slide(prs, slide_spec, counters)
-    if isinstance(spec.get("core"), dict):
-        for key in ("title", "author", "subject", "keywords", "comments"):
-            if key in spec["core"]:
-                setattr(prs.core_properties, key, str(spec["core"][key]))
-    ensure_parent(str(out))
-    prs.save(str(out))
-    return {"ok": True, "kind": "pptx", "command": "edit", "input": str(input_path), "output": str(out), "replacements": replacements, "added": counters}
-
-
 # ---------------------------------------------------------------------------
 # XLSX
 # ---------------------------------------------------------------------------
@@ -1113,68 +1010,6 @@ def xlsx_read(input_path: Path, data_only: bool = False) -> dict[str, Any]:
     }
 
 
-def xlsx_edit(spec: dict[str, Any], input_path: Path, out: Path) -> dict[str, Any]:
-    from openpyxl import load_workbook
-    from openpyxl.drawing.image import Image as XLImage
-
-    workbook = load_workbook(str(input_path))
-    changed = 0
-    for operation in spec.get("operations", []):
-        if not isinstance(operation, dict):
-            continue
-        action = str(operation.get("action", "set"))
-        if action == "add_sheet":
-            title = str(operation.get("name", "Sheet"))
-            worksheet = workbook.create_sheet(title)
-        elif action == "delete_sheet":
-            name = str(operation.get("name", ""))
-            if name not in workbook.sheetnames:
-                fail(f"sheet not found: {name}")
-            workbook.remove(workbook[name])
-            continue
-        elif action == "rename_sheet":
-            old = str(operation.get("from", ""))
-            new = str(operation.get("to", ""))
-            if old not in workbook.sheetnames:
-                fail(f"sheet not found: {old}")
-            workbook[old].title = new
-            continue
-        else:
-            name = str(operation.get("sheet", workbook.sheetnames[0]))
-            if name not in workbook.sheetnames:
-                fail(f"sheet not found: {name}")
-            worksheet = workbook[name]
-            if action == "set_cells":
-                for address, value in (operation.get("cells") or {}).items():
-                    worksheet[str(address)] = _xlsx_value(value)
-                    changed += 1
-            elif action == "append_rows":
-                for row in operation.get("rows", []):
-                    worksheet.append([_xlsx_value(value) for value in row])
-                    changed += 1
-            elif action == "style":
-                for address, style in (operation.get("cells") or {}).items():
-                    if isinstance(style, dict):
-                        for cell in _xlsx_cells(worksheet, str(address)):
-                            _xlsx_apply_style(cell, style)
-                            changed += 1
-            elif action == "chart":
-                _xlsx_add_chart(worksheet, operation)
-                changed += 1
-            elif action == "image":
-                path = require_file(str(operation.get("path", "")), "image")
-                worksheet.add_image(XLImage(str(path)), str(operation.get("anchor", "A1")))
-                changed += 1
-            elif action == "rows":
-                for row in operation.get("rows", []):
-                    worksheet.append([_xlsx_value(value) for value in row])
-                    changed += 1
-    ensure_parent(str(out))
-    workbook.save(str(out))
-    workbook.close()
-    return {"ok": True, "kind": "xlsx", "command": "edit", "input": str(input_path), "output": str(out), "changes": changed}
-
-
 def xlsx_recalc(input_path: Path, out: Path) -> dict[str, Any]:
     """Force Microsoft Excel to recalculate and save cached formula values."""
     if sys.platform != "win32" or office_binary("xlsx") is None:
@@ -1280,13 +1115,6 @@ def main() -> None:
         render.add_argument("--dpi", type=int, default=110)
         render.add_argument("--json-out")
 
-        if kind in {"docx", "pdf", "pptx", "xlsx"}:
-            edit = commands.add_parser("edit")
-            edit.add_argument("--input", required=True)
-            edit.add_argument("--spec", required=True)
-            edit.add_argument("--out", required=True)
-            edit.add_argument("--json-out")
-
         if kind == "xlsx":
             recalc = commands.add_parser("recalc")
             recalc.add_argument("--input", required=True)
@@ -1321,18 +1149,6 @@ def main() -> None:
                 result = pptx_read(input_path)
             else:
                 result = xlsx_read(input_path, data_only=bool(getattr(args, "data_only", False)))
-        elif args.command == "edit":
-            input_path = require_file(args.input)
-            spec = load_json(args.spec)
-            out = Path(args.out)
-            if args.format == "docx":
-                result = docx_edit(spec, input_path, out)
-            elif args.format == "pdf":
-                result = pdf_edit(spec, input_path, out)
-            elif args.format == "pptx":
-                result = pptx_edit(spec, input_path, out)
-            else:
-                result = xlsx_edit(spec, input_path, out)
         elif args.command == "render":
             input_path = require_file(args.input)
             out_dir = Path(args.out_dir)

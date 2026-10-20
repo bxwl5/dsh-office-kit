@@ -39,13 +39,21 @@ interface CliStatus {
   }
 }
 
-function runCli(python: string, args: string[]): Record<string, any> {
-  const stdout = execFileSync(python, [officePaths().cli, ...args], {
+function runJson(command: string, args: string[]): Record<string, any> {
+  const stdout = execFileSync(command, args, {
     encoding: 'utf8',
     env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
     maxBuffer: 8 * 1024 * 1024,
   })
   return JSON.parse(stdout)
+}
+
+function runCli(python: string, args: string[]): Record<string, any> {
+  return runJson(python, [officePaths().cli, ...args])
+}
+
+function runScript(python: string, pack: string, script: string, args: string[]): Record<string, any> {
+  return runJson(python, [join(PACKAGE_ROOT, 'assets', 'skills', pack, script), ...args])
 }
 
 const python = configuredPython()
@@ -153,13 +161,13 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(result.equations).toBe(1)
   })
 
-  it('edits DOCX text and appends a heading without losing the equation', () => {
+  it('edits DOCX text and appends a heading through the pack scripts', () => {
     const file = create('documents', '季度 报告-编辑前')
-    const spec = join(directory, 'docx-edit.json')
-    const out = join(directory, '季度 报告-编辑后.docx')
-    writeFileSync(spec, JSON.stringify({ replace: [{ find: '42 家', replace: '51 家' }], blocks: [{ type: 'heading', level: 2, text: '附录' }] }))
-    expect(runCli(python!, ['docx', 'edit', '--input', file, '--spec', spec, '--out', out]).replacements).toBe(1)
-    const result = read('docx', out)
+    const replaced = join(directory, '季度 报告-替换.docx')
+    const edited = join(directory, '季度 报告-编辑后.docx')
+    expect(runScript(python!, 'office-documents', 'scripts/replace_text.py', ['--input', file, '--find', '42 家', '--replace', '51 家', '--out', replaced]).replacements).toBe(1)
+    expect(runScript(python!, 'office-documents', 'scripts/append_blocks.py', ['--input', replaced, '--blocks', JSON.stringify([{ type: 'heading', level: 2, text: '附录' }]), '--out', edited]).appended).toBe(1)
+    const result = read('docx', edited)
     expect(result.paragraphs.some((item: { text: string }) => item.text.includes('51 家'))).toBe(true)
     expect(result.headings).toContain('附录')
     expect(result.equations).toBe(1)
@@ -172,35 +180,41 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(result.pages.map((page: { text: string }) => page.text).join('')).toContain('产品说明')
   })
 
-  it('edits PDF metadata and writes a separate file', () => {
+  it('writes PDF metadata through the pack script and leaves the original untouched', () => {
     const file = create('pdf', '产品 说明-编辑前')
-    const spec = join(directory, 'pdf-edit.json')
     const out = join(directory, '产品 说明-编辑后.pdf')
-    writeFileSync(spec, JSON.stringify({ metadata: { Title: '产品说明（已编辑）' } }))
-    expect(runCli(python!, ['pdf', 'edit', '--input', file, '--spec', spec, '--out', out]).page_count).toBe(1)
+    const report = runScript(python!, 'office-pdf', 'scripts/metadata.py', ['--input', file, '--set', 'title=产品说明（已编辑）', '--out', out])
+    expect(report.applied.title).toBe('产品说明（已编辑）')
     expect(read('pdf', out).metadata['/Title']).toBe('产品说明（已编辑）')
+    expect(read('pdf', file).metadata['/Title']).not.toBe('产品说明（已编辑）')
   })
 
-  it('creates, reads, and edits a PPTX deck', () => {
+  it('merges, drops, and rotates PDF pages through the pack page_ops script', () => {
+    const file = create('pdf', '产品 说明-合并')
+    const merged = join(directory, '合并.pdf')
+    const edited = join(directory, '合并-删除并旋转.pdf')
+    expect(runScript(python!, 'office-pdf', 'scripts/page_ops.py', ['--input', file, '--merge', file, '--out', merged]).pages_out).toBe(2)
+    expect(runScript(python!, 'office-pdf', 'scripts/page_ops.py', ['--input', merged, '--remove', '0', '--rotate', '90', '--out', edited]).pages_out).toBe(1)
+  })
+
+  it('creates, reads, and extends a PPTX deck through the pack script', () => {
     const file = create('presentations', '年度 汇报')
     const result = read('pptx', file)
     expect(result.slide_count).toBe(2)
     expect(result.slides[1].charts[0].categories).toEqual(['Q1', 'Q2'])
-    const spec = join(directory, 'pptx-edit.json')
+    const spec = join(directory, 'pptx-extra-slides.json')
     const out = join(directory, '年度 汇报-编辑后.pptx')
     writeFileSync(spec, JSON.stringify({ slides: [{ layout: 'bullets', title: '下一步', bullets: ['验收', '发布'] }] }))
-    expect(runCli(python!, ['pptx', 'edit', '--input', file, '--spec', spec, '--out', out]).added.slides).toBe(1)
+    expect(runScript(python!, 'office-presentations', 'container_tools/add_slides.py', ['--input', file, '--spec', spec, '--out', out]).added).toBe(1)
     expect(read('pptx', out).slide_count).toBe(3)
   })
 
-  it('creates, reads, and edits an XLSX workbook', () => {
+  it('creates, reads, and writes cells through the pack script', () => {
     const file = create('spreadsheets', '财务 模型')
     const result = read('xlsx', file)
     expect(result.sheets[0].formulas.length).toBe(3)
-    const spec = join(directory, 'xlsx-edit.json')
     const out = join(directory, '财务 模型-编辑后.xlsx')
-    writeFileSync(spec, JSON.stringify({ operations: [{ action: 'set_cells', sheet: '汇总', cells: { E2: '已审核' } }] }))
-    expect(runCli(python!, ['xlsx', 'edit', '--input', file, '--spec', spec, '--out', out]).changes).toBe(1)
+    expect(runScript(python!, 'office-spreadsheets', 'container_tools/set_cells.py', ['--input', file, '--sheet', '汇总', '--set', 'E2=已审核', '--out', out]).written).toHaveLength(1)
     expect(read('xlsx', out).sheets[0].rows[1][4]).toBe('已审核')
   })
 

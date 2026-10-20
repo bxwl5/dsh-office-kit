@@ -1,8 +1,8 @@
 import type { ComposerAttachment, InputActions, UserTextTransformContext } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { AnnotationImageLimits, AnnotationIntake, AnnotationParagraph, AnnotationTextRun, OfficeAnnotation } from '../src/client/types'
 import { describe, expect, it, vi } from 'vitest'
-import { annotationPopoverPosition, annotationPreview, annotationRule, captureAnnotation, containsPoint, groupParagraphs, intersectRect, normalizedRegion, paddedRect, paragraphAtPoint, sendAnnotations, serializeAnnotations } from '../src/client/annotation'
-import { ANNOTATION_CLOSE, ANNOTATION_MAX_ITEMS, ANNOTATION_MAX_PAYLOAD, ANNOTATION_MAX_TEXT, ANNOTATION_NODE, ANNOTATION_OPEN } from '../src/client/constants'
+import { annotationPopoverPosition, annotationPreview, annotationRule, captureAnnotation, containsPoint, groupParagraphs, intersectRect, normalizedRegion, paddedRect, paragraphAtPoint, sendAnnotations, serializeAnnotations, spreadsheetAt } from '../src/client/annotation'
+import { ANNOTATION_CLOSE, ANNOTATION_MAX_ITEMS, ANNOTATION_MAX_PAYLOAD, ANNOTATION_MAX_TEXT, ANNOTATION_NODE, ANNOTATION_OPEN, ANNOTATION_SPREADSHEET_CANVAS_SELECTOR } from '../src/client/constants'
 
 const ANNOTATION: OfficeAnnotation = {
   target: 'reports/review.pdf',
@@ -53,6 +53,14 @@ describe('annotation geometry and paragraphs', () => {
     expect(containsPoint(page, 100, 200)).toBe(true)
     expect(containsPoint(page, 300, 300)).toBe(true)
     expect(containsPoint(page, 301, 300)).toBe(false)
+  })
+
+  it('locates the spreadsheet grid canvas by point without assigning a page', () => {
+    const grid = { left: 100, top: 200, width: 300, height: 200 }
+    const canvas = { getBoundingClientRect: () => grid } as HTMLCanvasElement
+    const preview = { querySelectorAll: (selector: string) => selector === ANNOTATION_SPREADSHEET_CANVAS_SELECTOR ? [canvas] : [] } as unknown as HTMLElement
+    expect(spreadsheetAt(preview, 150, 250)).toEqual({ canvas })
+    expect(spreadsheetAt(preview, 10, 10)).toBeUndefined()
   })
 
   it('pads paragraph and captured region bounds by 3px without changing the source', () => {
@@ -199,6 +207,23 @@ describe('annotation screenshot capture', () => {
 })
 
 describe('annotation message codec', () => {
+  it('keeps absent optional fields out of the payload and carries xlsx regions as unmapped', () => {
+    expect(JSON.stringify(ANNOTATION)).toBe('{"target":"reports/review.pdf","fileName":"review.pdf","text":"Original paragraph","requirement":"Replace this paragraph"}')
+    const sheet: OfficeAnnotation = {
+      target: 'books/budget.xlsx',
+      fileName: 'budget.xlsx',
+      text: '',
+      requirement: 'Explain this block',
+      region: { left: 0.1, top: 0.2, width: 0.3, height: 0.4 },
+      imageName: 'budget-region-1.png',
+      unmapped: true,
+    }
+    const encoded = serializeAnnotations([sheet])
+    expect(encoded).toContain('"unmapped":true')
+    expect(encoded).not.toContain('"page"')
+    expect(annotationRule.match(encoded, 0, CONTEXT)?.data).toEqual({ items: [sheet] })
+  })
+
   it('roundtrips marker-like text, quotes, slashes, and Unicode without ending the payload early', () => {
     const items: OfficeAnnotation[] = [{
       ...ANNOTATION,
@@ -252,6 +277,9 @@ describe('annotation message codec', () => {
     ['an incomplete region', [{ ...ANNOTATION, region: { left: 0, top: 0, width: 1 } }]],
     ['an overflowing region', [{ ...ANNOTATION, region: { left: 0.8, top: 0, width: 0.3, height: 1 } }]],
     ['a zero-size region', [{ ...ANNOTATION, region: { left: 0, top: 0, width: 0, height: 1 } }]],
+    ['a blank sheet name', [{ ...ANNOTATION, sheet: ' \n' }]],
+    ['a blank range', [{ ...ANNOTATION, range: '' }]],
+    ['a false unmapped flag', [{ ...ANNOTATION, unmapped: false }]],
   ])('keeps %s visible as ordinary text', (_label, payload) => {
     expect(annotationRule.match(`${ANNOTATION_OPEN}\n${JSON.stringify(payload)}\n${ANNOTATION_CLOSE}`, 0, CONTEXT)).toBeUndefined()
   })

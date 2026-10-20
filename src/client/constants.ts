@@ -18,6 +18,8 @@ export const SESSION_FILE_PREFIX = `${FILE_ADDRESS_PREFIX}session/`
 
 /** Only semantic selectors: no dependency on another plugin's CSS/data attributes. */
 export const ANNOTATION_CANVAS_SELECTOR = 'canvas[role="img"][aria-label]'
+/** Spreadsheet previews paint one grid canvas instead of paged PDF surfaces. */
+export const ANNOTATION_SPREADSHEET_CANVAS_SELECTOR = 'canvas.fortune-sheet-canvas'
 /** Gravity UI Icons 2.21.0 CommentFill (MIT); original retained in assets/icons/comment-fill.svg. */
 export const ANNOTATION_CURSOR = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 16 16"><path fill="#466eff" fill-rule="evenodd" d="M8 13c3.866 0 7-2 7-6s-3.134-6-7-6-7 2-7 6c0 2.16.914 3.737 2.364 4.73l.09 2.161a1.157 1.157 0 0 0 1.857.872l2.322-1.77Q7.816 13 8 13" clip-rule="evenodd"/></svg>')}") 4 18, crosshair`
 export const ANNOTATION_HOLD_MS = 350

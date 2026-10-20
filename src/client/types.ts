@@ -55,6 +55,12 @@ export interface OfficeAnnotation {
   readonly target: string
   readonly fileName: string
   readonly page?: number
+  /** Worksheet that was on screen for an xlsx region, when the preview names it. */
+  readonly sheet?: string
+  /** A1 range the preview itself reported for the region; never inferred from pixels. */
+  readonly range?: string
+  /** The preview exposed no sheet/range for the region, so only `region` locates it. */
+  readonly unmapped?: true
   readonly text: string
   readonly requirement: string
   readonly region?: AnnotationRect

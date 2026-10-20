@@ -1,6 +1,6 @@
 import type { UserTextRule } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { AnnotationParagraph, AnnotationRect, AnnotationSelection, AnnotationSendInput, AnnotationTextRun, OfficeAnnotation } from './types'
-import { ANNOTATION_CANVAS_SELECTOR, ANNOTATION_CLOSE, ANNOTATION_HIT_X, ANNOTATION_HIT_Y, ANNOTATION_MAX_ITEMS, ANNOTATION_MAX_PAYLOAD, ANNOTATION_MAX_PIXELS, ANNOTATION_MAX_TEXT, ANNOTATION_NODE, ANNOTATION_OPEN, ANNOTATION_PADDING } from './constants'
+import { ANNOTATION_CANVAS_SELECTOR, ANNOTATION_CLOSE, ANNOTATION_HIT_X, ANNOTATION_HIT_Y, ANNOTATION_MAX_ITEMS, ANNOTATION_MAX_PAYLOAD, ANNOTATION_MAX_PIXELS, ANNOTATION_MAX_TEXT, ANNOTATION_NODE, ANNOTATION_OPEN, ANNOTATION_PADDING, ANNOTATION_SPREADSHEET_CANVAS_SELECTOR } from './constants'
 import { normalizeSelection } from './quote'
 
 export function unionRect(a: AnnotationRect, b: AnnotationRect): AnnotationRect {
@@ -121,6 +121,12 @@ export function canvasAt(preview: HTMLElement, x: number, y: number): { canvas: 
   return index < 0 ? undefined : { canvas: canvases[index]!, page: index + 1 }
 }
 
+/** A workbook is one unpaged grid canvas: it locates pixels, never a page number. */
+export function spreadsheetAt(preview: HTMLElement, x: number, y: number): { canvas: HTMLCanvasElement } | undefined {
+  const canvas = [...preview.querySelectorAll<HTMLCanvasElement>(ANNOTATION_SPREADSHEET_CANVAS_SELECTOR)].find(item => containsPoint(item.getBoundingClientRect(), x, y) && item.getBoundingClientRect().width > 0)
+  return canvas ? { canvas } : undefined
+}
+
 export function normalizedRegion(box: AnnotationRect, page: AnnotationRect): AnnotationRect {
   if (page.width <= 0 || page.height <= 0)
     throw new Error('annotation.emptyPage')
@@ -161,7 +167,10 @@ function isAnnotation(value: unknown): value is OfficeAnnotation {
   if (!string(item.target, ANNOTATION_MAX_TEXT) || !string(item.fileName, 1000) || !string(item.text, ANNOTATION_MAX_TEXT)
     || !string(item.requirement, ANNOTATION_MAX_TEXT) || !(item.requirement as string).trim()
     || (item.page !== undefined && (!Number.isSafeInteger(item.page) || (item.page as number) < 1))
-    || (item.imageName !== undefined && !string(item.imageName, 1000))) {
+    || (item.imageName !== undefined && !string(item.imageName, 1000))
+    || (item.sheet !== undefined && (!string(item.sheet, 1000) || !(item.sheet as string).trim()))
+    || (item.range !== undefined && (!string(item.range, 100) || !(item.range as string).trim()))
+    || (item.unmapped !== undefined && item.unmapped !== true)) {
     return false
   }
   if (item.region !== undefined) {

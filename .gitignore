@@ -16,3 +16,5 @@ temp
 .venv-check
 .tmp-acceptance
 .python-path
+__pycache__
+*.pyc
