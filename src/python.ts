@@ -1,8 +1,8 @@
 import type { ChildProcess } from 'node:child_process'
 import { execFile } from 'node:child_process'
-import { readFileSync, statSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
@@ -250,6 +250,37 @@ function savedPython(configFile: string, legacyConfigFile?: string): string | un
     }
   }
   return undefined
+}
+
+/**
+ * Record the renderer the harness loaded so every later helper call finds it.
+ *
+ * A profile install keeps the plugin in `~/.dsh/profiles/<name>/node_modules`
+ * and the kit in the harness tree, so no walk-up from the plugin can reach it.
+ * The helper reads this record first; a read-only config must not stop loading.
+ */
+export function saveKitPath(configFile: string, node: string, cli: string): void {
+  let config: Record<string, unknown> = {}
+  try {
+    const parsed = JSON.parse(readFileSync(configFile, 'utf8')) as unknown
+    if (parsed != null && typeof parsed === 'object' && !Array.isArray(parsed))
+      config = parsed as Record<string, unknown>
+  }
+  catch {
+    // Missing or corrupt: start from a clean record.
+  }
+  const current = config.libreofficeKit as { node?: unknown, cli?: unknown } | undefined
+  if (current?.node === node && current.cli === cli)
+    return
+  const temporary = `${configFile}.${process.pid}.tmp`
+  try {
+    mkdirSync(dirname(configFile), { recursive: true })
+    writeFileSync(temporary, `${JSON.stringify({ ...config, libreofficeKit: { node, cli } }, null, 2)}\n`, 'utf8')
+    renameSync(temporary, configFile)
+  }
+  catch {
+    // A read-only config must not stop the plugin from loading.
+  }
 }
 
 /** The interpreter inside a virtual environment, which differs per platform. */

@@ -11,7 +11,7 @@ import { BUNDLED_SKILL_RANK } from '@deepseek-ai/dsh-skill'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { OFFICE_FEATURES } from './features'
 import { PACKAGE_ROOT, resolveKitCli } from './kit'
-import { cliExists, ensureRuntime, officePaths } from './python'
+import { cliExists, ensureRuntime, officePaths, saveKitPath } from './python'
 
 /** Services required by this host half. */
 export const inject = ['skills', 'tools']
@@ -50,7 +50,7 @@ interface KitFacts {
 }
 
 const KIT_MISSING
-  = 'the DSH LibreOffice kit (@deepseek-ai/libreoffice-kit) was not found: DeepSeek Harness normally injects DSH_LIBREOFFICE_KIT_CLI, so point that variable at <kit>/lib/cli.js if this plugin runs outside the harness'
+  = 'the DSH LibreOffice kit (@deepseek-ai/libreoffice-kit) was not found: the plugin records where the harness loaded it from in dsh-office-kit\'s config.json, and DSH_LIBREOFFICE_KIT_CLI overrides that for a plugin running outside the harness'
 
 const runKit = promisify(execFile)
 
@@ -106,13 +106,11 @@ export function apply(ctx: Context): void {
   const paths = officePaths()
   const candidates: SkillCandidate[] = []
 
-  // Shells and helper processes spawned by the agent inherit this process environment,
-  // which is how python/office_cli.py and the skill scripts find the harness renderer.
+  // Agent shells get a curated environment, so an env var set here would not reach
+  // them. Record the path instead: python/office_cli.py reads it from config.json.
   const kitCli = resolveKitCli()
-  if (kitCli != null) {
-    process.env.DSH_LIBREOFFICE_KIT_CLI ??= kitCli
-    process.env.DSH_NODE ??= process.execPath
-  }
+  if (kitCli != null)
+    saveKitPath(paths.configFile, process.execPath, kitCli)
 
   for (const feature of OFFICE_FEATURES) {
     const directory = join(paths.skillsDir, feature.skill)

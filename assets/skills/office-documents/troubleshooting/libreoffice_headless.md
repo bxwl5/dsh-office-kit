@@ -12,19 +12,19 @@ Look at `renderers.kit` and `renderers.can_render`. `can_render.docx: false` mea
 
 Rendering goes through the LibreOffice kit that DeepSeek Harness ships (`@deepseek-ai/libreoffice-kit`). On macOS and Windows it uses the kit's native engine; on Linux it uses the WASM engine. A separately installed Microsoft Office, WPS Office, or system LibreOffice is **not** used and does not make rendering work on its own.
 
-The plugin resolves the kit in this order:
+The plugin records the kit's location when the harness loads it, and the helper reads that record before anything else:
 
-1. `DSH_LIBREOFFICE_KIT_CLI` — the host half sets it (and `DSH_NODE`) when it loads, so every shell the agent spawns inherits it. That is what makes a profile install work, where the kit lives in the harness tree and not next to the plugin.
-2. The harness entry point (`process.argv[1]`, e.g. `<dsh>/node_modules/@deepseek-ai/dsh/lib/bin.js`) → resolves the kit from the tree the harness itself loaded.
+1. `DSH_LIBREOFFICE_KIT_CLI` — an explicit override, also handy for a hand-run helper.
+2. `libreofficeKit` in dsh-office-kit's `config.json` (`%APPDATA%\dsh-office-kit\config.json`, or `$XDG_CONFIG_HOME/dsh-office-kit/config.json`). The host half writes this at load, resolving the kit from the harness entry point (`process.argv[1]`, e.g. `<dsh>/node_modules/@deepseek-ai/dsh/lib/bin.js`). This is what makes a profile install work, where the kit lives in the harness tree and not next to the plugin.
 3. Walking up from the plugin directory through `node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js` — covers a checkout or a plugin-local dependency.
 
-Running the helper by hand outside the harness means setting `DSH_LIBREOFFICE_KIT_CLI` yourself; `DSH_NODE` overrides the node binary if `node` is not on `PATH`.
+`DSH_OFFICE_CONFIG` points the helper at a different config file; `DSH_NODE` overrides the node binary if `node` is not on `PATH`.
 
 ## Common failures
 
 | Message | Cause | Fix |
 |---|---|---|
-| `the LibreOffice renderer is not available` | Kit not found | Run through the plugin (the host injects the path), or set `DSH_LIBREOFFICE_KIT_CLI` to the kit's `lib/cli.js` |
+| `the LibreOffice renderer is not available` | Kit not found | Load the plugin through the harness (it records the path), or set `DSH_LIBREOFFICE_KIT_CLI` to the kit's `lib/cli.js` |
 | `cannot start the LibreOffice kit` / `EEXIST` | Interrupted install, or a stale staging directory | Re-run the plugin postinstall; delete leftover `.kit-render-*` directories |
 | `Unsupported LibreOfficeKit host` | Unsupported platform/arch (the kit ships Windows x64/arm64, macOS x64/arm64, Linux via WASM) | Render on a supported host |
 | `warning: N font(s) used by this file are not installed` | Font substitution — the render succeeded but that text may reflow or show boxes | Install the font or substitute it deliberately, then re-render |

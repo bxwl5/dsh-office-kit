@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
 import { afterEach, describe, expect, it } from 'vitest'
 import { resolveKitCli } from '../src/kit'
+import { saveKitPath } from '../src/python'
 
 const temporary: string[] = []
 const originalOverride = process.env.DSH_LIBREOFFICE_KIT_CLI
@@ -53,5 +54,25 @@ describe('resolveKitCli', () => {
     writeFileSync(cli, '')
     process.env.DSH_LIBREOFFICE_KIT_CLI = cli
     expect(resolveKitCli(join(root, 'missing', 'bin.js'))).toBe(cli)
+  })
+})
+
+describe('saveKitPath', () => {
+  it('records the kit beside the interpreter postinstall saved', () => {
+    const root = sandbox()
+    const config = join(root, 'config.json')
+    writeFileSync(config, JSON.stringify({ python: 'C:/venv/python.exe', version: '0.4.1' }))
+    saveKitPath(config, 'C:/node/node.exe', 'C:/kit/lib/cli.js')
+    expect(JSON.parse(readFileSync(config, 'utf8'))).toEqual({
+      python: 'C:/venv/python.exe',
+      version: '0.4.1',
+      libreofficeKit: { node: 'C:/node/node.exe', cli: 'C:/kit/lib/cli.js' },
+    })
+    saveKitPath(config, 'C:/node/node.exe', 'C:/kit/lib/cli.js')
+    expect(readFileSync(config, 'utf8')).toBe(`${JSON.stringify({
+      python: 'C:/venv/python.exe',
+      version: '0.4.1',
+      libreofficeKit: { node: 'C:/node/node.exe', cli: 'C:/kit/lib/cli.js' },
+    }, null, 2)}\n`)
   })
 })

@@ -1,7 +1,8 @@
 import type { OfficeFeatureId } from '../src/features'
 import { Buffer } from 'node:buffer'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
@@ -341,4 +342,26 @@ describe('renderer stack', () => {
       expect(source, relative).not.toMatch(/powershell|ComObject|KWps|Ket\.Application|soffice/iu)
     }
   })
+})
+
+describe.runIf(ready)('kit discovery handoff', () => {
+  it('uses the path the host recorded in config.json from a tree that has no kit', () => {
+    // A profile install keeps the plugin and the kit in different trees, so the
+    // helper must trust the record instead of walking up.
+    const kitCli = createRequire(import.meta.url).resolve('@deepseek-ai/libreoffice-kit/cli')
+    const root = mkdtempSync(join(tmpdir(), 'dsh office handoff '))
+    mkdirSync(join(root, 'python'), { recursive: true })
+    copyFileSync(join(PACKAGE_ROOT, 'package.json'), join(root, 'package.json'))
+    copyFileSync(join(PACKAGE_ROOT, 'python', 'office_cli.py'), join(root, 'python', 'office_cli.py'))
+    const config = join(root, 'config.json')
+    writeFileSync(config, JSON.stringify({ python: 'untouched', libreofficeKit: { node: process.execPath, cli: kitCli } }))
+    const helper = join(root, 'python', 'office_cli.py')
+    const env: NodeJS.ProcessEnv = { ...process.env, DSH_OFFICE_CONFIG: config }
+    delete env.DSH_LIBREOFFICE_KIT_CLI
+    const report = JSON.parse(execFileSync(python!, [helper, 'status'], { encoding: 'utf8', env }))
+    expect(report.renderers.kit.available).toBe(true)
+    expect(report.renderers.kit.cli).toBe(kitCli)
+    const without = JSON.parse(execFileSync(python!, [helper, 'status'], { encoding: 'utf8', env: { ...env, DSH_OFFICE_CONFIG: join(root, 'missing.json') } }))
+    expect(without.renderers.kit.available).toBe(false)
+  }, 60_000)
 })

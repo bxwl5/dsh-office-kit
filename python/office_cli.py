@@ -93,23 +93,66 @@ KIT_RELATIVE = Path("node_modules") / "@deepseek-ai" / "libreoffice-kit" / "lib"
 #: Actionable explanation used whenever the kit cannot be located.
 KIT_MISSING = (
     "the LibreOffice renderer is not available: the DSH LibreOffice kit was not found. "
-    "DeepSeek Harness normally injects DSH_LIBREOFFICE_KIT_CLI when it loads this plugin; "
-    "if you run the helper by hand, point that variable at <kit>/lib/cli.js of "
+    "The plugin records the path in dsh-office-kit's config.json when the harness loads it; "
+    "for a hand-run helper, set DSH_LIBREOFFICE_KIT_CLI to <kit>/lib/cli.js of "
     "@deepseek-ai/libreoffice-kit"
 )
+
+
+def config_file() -> Path:
+    """The config.json the host half and postinstall write (mirrors src/python.ts)."""
+    override = os.environ.get("DSH_OFFICE_CONFIG")
+    if override:
+        return Path(override).expanduser()
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    return base / "dsh-office-kit" / "config.json"
+
+
+def saved_kit() -> tuple[str, str] | None:
+    """Return (node, kit CLI) as recorded by the host half, or None.
+
+    This is how a profile install works: the kit lives in the harness tree, which
+    no walk-up from the plugin directory can reach, so the host half looks it up
+    while it loads and stores the result here for every later helper call.
+    """
+    try:
+        parsed = json.loads(config_file().read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
+    kit = parsed.get("libreofficeKit") if isinstance(parsed, dict) else None
+    if not isinstance(kit, dict):
+        return None
+    cli = kit.get("cli")
+    if not isinstance(cli, str) or not Path(cli).is_file():
+        return None
+    node = kit.get("node")
+    if not isinstance(node, str) or not node:
+        node = os.environ.get("DSH_NODE") or shutil.which("node")
+    if not node:
+        return None
+    return node, cli
 
 
 def find_kit() -> tuple[str, str] | None:
     """Return (node, kit CLI) for the bundled renderer, or None when it is absent.
 
-    DeepSeek Harness exports `DSH_LIBREOFFICE_KIT_CLI` (and `DSH_NODE`) before any
-    agent shell runs, which covers a profile install where the kit lives in the
-    harness tree. The walk-up covers a checkout or a plugin-local dependency.
+    Order: an explicit `DSH_LIBREOFFICE_KIT_CLI`, then the path the host half
+    recorded in config.json (the profile-install case), then a walk up from this
+    file, which covers a checkout or a plugin-local dependency.
     """
-    candidates: list[Path] = []
     override = os.environ.get("DSH_LIBREOFFICE_KIT_CLI")
     if override:
-        candidates.append(Path(override).expanduser())
+        cli = Path(override).expanduser()
+        if cli.is_file():
+            node = os.environ.get("DSH_NODE") or shutil.which("node")
+            return (node, str(cli)) if node else None
+    recorded = saved_kit()
+    if recorded is not None:
+        return recorded
+    candidates: list[Path] = []
     for root in (PACKAGE_ROOT, *PACKAGE_ROOT.parents):
         candidates.append(root / KIT_RELATIVE)
     cli = next((candidate for candidate in candidates if candidate.is_file()), None)

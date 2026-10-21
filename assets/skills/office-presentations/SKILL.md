@@ -151,7 +151,7 @@ Guidance: [authoring workflow](references/authoring-workflow.md) ·
 
 - The DSH LibreOffice kit missing (`renderers.can_render.pptx: false`) → no true
   render; use `--engine draft` and say the check was geometric. A harness install
-  that ships the kit fixes it (the plugin injects `DSH_LIBREOFFICE_KIT_CLI` when it
+  that ships the kit fixes it (the plugin records its path in `config.json` when it
   loads); a standalone Office/LibreOffice install does not.
 - Fonts the user's machine lacks are substituted by any renderer; the pack
   cannot install fonts.

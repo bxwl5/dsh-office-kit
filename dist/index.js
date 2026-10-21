@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import process from "node:process";
@@ -256,6 +256,34 @@ function savedPython(configFile, legacyConfigFile) {
 		} catch {}
 	}
 }
+/**
+* Record the renderer the harness loaded so every later helper call finds it.
+*
+* A profile install keeps the plugin in `~/.dsh/profiles/<name>/node_modules`
+* and the kit in the harness tree, so no walk-up from the plugin can reach it.
+* The helper reads this record first; a read-only config must not stop loading.
+*/
+function saveKitPath(configFile, node, cli) {
+	let config = {};
+	try {
+		const parsed = JSON.parse(readFileSync(configFile, "utf8"));
+		if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) config = parsed;
+	} catch {}
+	const current = config.libreofficeKit;
+	if (current?.node === node && current.cli === cli) return;
+	const temporary = `${configFile}.${process.pid}.tmp`;
+	try {
+		mkdirSync(dirname(configFile), { recursive: true });
+		writeFileSync(temporary, `${JSON.stringify({
+			...config,
+			libreofficeKit: {
+				node,
+				cli
+			}
+		}, null, 2)}\n`, "utf8");
+		renameSync(temporary, configFile);
+	} catch {}
+}
 /** The interpreter inside a virtual environment, which differs per platform. */
 function venvPython(venv) {
 	return join(venv, process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
@@ -433,7 +461,7 @@ function parseSkill(raw, path) {
 		content: raw.slice(match[0].length).trim()
 	};
 }
-const KIT_MISSING = "the DSH LibreOffice kit (@deepseek-ai/libreoffice-kit) was not found: DeepSeek Harness normally injects DSH_LIBREOFFICE_KIT_CLI, so point that variable at <kit>/lib/cli.js if this plugin runs outside the harness";
+const KIT_MISSING = "the DSH LibreOffice kit (@deepseek-ai/libreoffice-kit) was not found: the plugin records where the harness loaded it from in dsh-office-kit's config.json, and DSH_LIBREOFFICE_KIT_CLI overrides that for a plugin running outside the harness";
 const runKit = promisify(execFile);
 async function kitFacts() {
 	const cli = resolveKitCli();
@@ -495,10 +523,7 @@ function apply(ctx) {
 	const paths = officePaths();
 	const candidates = [];
 	const kitCli = resolveKitCli();
-	if (kitCli != null) {
-		process.env.DSH_LIBREOFFICE_KIT_CLI ??= kitCli;
-		process.env.DSH_NODE ??= process.execPath;
-	}
+	if (kitCli != null) saveKitPath(paths.configFile, process.execPath, kitCli);
 	for (const feature of OFFICE_FEATURES) {
 		const directory = join(paths.skillsDir, feature.skill);
 		const path = join(directory, "SKILL.md");
