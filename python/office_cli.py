@@ -314,6 +314,94 @@ def xlsx_render(input_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
     }
 
 
+def docx_used_fonts(path: Path) -> set[str]:
+    """Font names the document actually applies.
+
+    The kit reports every font in the package, including latent styles inherited
+    from python-docx's template (e.g. Courier in the unused MacroText style), so
+    a document with no Courier text still warns about it. Keep only fonts that
+    appear on a run, in a referenced style, in the defaults, or in the theme.
+    """
+    import zipfile
+
+    from lxml import etree
+
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    fonts: set[str] = set()
+    styles: dict[str, tuple[set[str], str | None]] = {}
+    referenced: set[str] = set()
+    theme_fonts: set[str] = set()
+
+    def rfonts(element) -> set[str]:
+        found = set()
+        for node in element.iter(f"{w}rFonts"):
+            for attribute in ("ascii", "hAnsi", "eastAsia", "cs"):
+                value = node.get(f"{w}{attribute}")
+                if value:
+                    found.add(value)
+        return found
+
+    with zipfile.ZipFile(path) as archive:
+        names = set(archive.namelist())
+
+        def load(name: str):
+            return etree.fromstring(archive.read(name))
+
+        if "word/styles.xml" in names:
+            root = load("word/styles.xml")
+            defaults = root.find(f"{w}docDefaults")
+            if defaults is not None:
+                fonts.update(rfonts(defaults))
+            for style in root.iter(f"{w}style"):
+                style_id = style.get(f"{w}styleId")
+                based_on = style.find(f"{w}basedOn")
+                styles[style_id] = (rfonts(style), based_on.get(f"{w}val") if based_on is not None else None)
+
+        for name in names:
+            if not name.startswith("word/") or not name.endswith(".xml"):
+                continue
+            if name.startswith(("word/styles", "word/theme/")):
+                continue
+            root = load(name)
+            fonts.update(rfonts(root))
+            for tag in ("pStyle", "rStyle", "tblStyle"):
+                for element in root.iter(f"{w}{tag}"):
+                    value = element.get(f"{w}val")
+                    if value:
+                        referenced.add(value)
+
+        if "word/theme/theme1.xml" in names:
+            theme = load("word/theme/theme1.xml")
+            for tag in ("majorFont", "minorFont"):
+                for element in theme.iter(tag):
+                    latin = element.find("latin")
+                    if latin is not None and latin.get("typeface"):
+                        theme_fonts.add(latin.get("typeface"))
+
+    pending = list(referenced)
+    seen = set()
+    while pending:
+        style_id = pending.pop()
+        if style_id in seen:
+            continue
+        seen.add(style_id)
+        entry = styles.get(style_id)
+        if entry is None:
+            continue
+        style_fonts, based_on = entry
+        fonts.update(style_fonts)
+        if based_on:
+            pending.append(based_on)
+    return fonts | theme_fonts
+
+
+def filter_missing_fonts(input_path: Path, kind: str, missing: list[str]) -> list[str]:
+    if kind != "docx" or not missing:
+        return missing
+    used = {name.lower() for name in docx_used_fonts(input_path)}
+    return [name for name in missing if name.lower() in used]
+
+
 def render_office(input_path: Path, kind: str, out_dir: Path, dpi: int, emit_pdf: bool = False) -> dict[str, Any]:
     """Rasterise an Office file page by page through the kit.
 
@@ -346,7 +434,7 @@ def render_office(input_path: Path, kind: str, out_dir: Path, dpi: int, emit_pdf
     shutil.rmtree(staging, ignore_errors=True)
     if not images:
         fail(f"the LibreOffice kit rendered no pages for {input_path.name}")
-    missing = [str(name) for name in report.get("missingFonts") or []]
+    missing = filter_missing_fonts(input_path, kind, [str(name) for name in report.get("missingFonts") or []])
     warnings = glyph_warnings(missing)
     report_warnings(warnings)
     result: dict[str, Any] = {
@@ -365,10 +453,11 @@ def render_office(input_path: Path, kind: str, out_dir: Path, dpi: int, emit_pdf
     if emit_pdf:
         converted = export_pdf(input_path, out_dir, dpi)
         result["pdf"] = converted["pdf"]
-        if not missing and converted["missing_fonts"]:
-            result["missing_fonts"] = converted["missing_fonts"]
+        converted_missing = filter_missing_fonts(input_path, kind, converted["missing_fonts"])
+        if not missing and converted_missing:
+            result["missing_fonts"] = converted_missing
             result["glyph_fallback"] = True
-            result["warnings"] = glyph_warnings(converted["missing_fonts"])
+            result["warnings"] = glyph_warnings(converted_missing)
             report_warnings(result["warnings"])
     return result
 

@@ -302,6 +302,54 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(existsSync(out)).toBe(true)
   })
 
+  it('stamps Chinese text by registering a system CJK font', () => {
+    const file = create('pdf', '盖章 来源')
+    const stamped = join(directory, '盖章 中文.pdf')
+    const result = runScript(python!, 'office-pdf', 'scripts/stamp_overlay.py', ['--input', file, '--out', stamped, '--text', '机密 · 第 {page} 页 / 共 {pages} 页', '--position', 'bottom-center'])
+    expect(result.ok).toBe(true)
+    expect(result.stamped_pages.map((page: { page: number }) => page.page)).toEqual([1])
+    expect(result.stamped_pages[0].text).toContain('机密')
+    expect(String(result.font_file)).toMatch(/\.tt[cf]$|\.otf$/iu)
+    const out = join(directory, '盖章 渲染', 'page-1.png')
+    expect(runScript(python!, 'office-pdf', 'scripts/stamp_overlay.py', ['--input', file, '--out', join(directory, '盖章 中文-渲染.pdf'), '--text', '机密', '--render-dir', join(directory, '盖章 渲染')]).rendered_pages.length).toBe(1)
+    expect(readFileSync(out).byteLength).toBeGreaterThan(5_000)
+  })
+
+  it('paints Chinese form values into the widget appearance and flattens them', () => {
+    const form = join(directory, '中文 表单.pdf')
+    const maker = join(directory, 'make-form.py')
+    writeFileSync(maker, [
+      'import sys',
+      'from reportlab.pdfgen import canvas',
+      'c = canvas.Canvas(sys.argv[1], pagesize=(400, 300))',
+      'c.drawString(40, 250, "AcroForm test")',
+      'c.acroForm.textfield(name="full_name", x=40, y=200, width=300, height=28)',
+      'c.acroForm.textfield(name="company", x=40, y=150, width=300, height=28)',
+      'c.acroForm.checkbox(name="agree", x=40, y=110, buttonStyle="check")',
+      'c.save()',
+      '',
+    ].join('\n'))
+    execFileSync(python!, [maker, form])
+
+    const values = JSON.stringify({ full_name: '张伟', company: '示例公司', agree: true })
+    const filled = join(directory, '中文 表单-已填.pdf')
+    const result = runScript(python!, 'office-pdf', 'scripts/forms.py', ['fill', '--input', form, '--out', filled, '--values', values, '--render-dir', join(directory, '渲染-表单')])
+    // pypdf alone would paint "?" here; the report names the fields it repainted.
+    expect(result.ok).toBe(true)
+    expect(result.cjk_appearance_fields).toEqual(['full_name', 'company'])
+    expect(result.written.full_name).toBe('张伟')
+    expect(readFileSync(join(directory, '渲染-表单', 'page-1.png')).byteLength).toBeGreaterThan(5_000)
+
+    const flat = join(directory, '中文 表单-扁平.pdf')
+    const flatten = runScript(python!, 'office-pdf', 'scripts/forms.py', ['fill', '--input', form, '--out', flat, '--values', values, '--flatten'])
+    expect(flatten.ok).toBe(true)
+    expect(flatten.flatten).toBe(true)
+    for (const check of flatten.checks as { check: string, ok: boolean }[]) {
+      if (['no widgets remain', 'no form fields remain', '/AcroForm removed'].includes(check.check))
+        expect(check.ok, check.check).toBe(true)
+    }
+  })
+
   it('writes UTF-8 JSON without UTF-8 env overrides and rasterises SVG', () => {
     const svg = join(directory, '图标.svg')
     const png = join(directory, '图标.png')
@@ -447,6 +495,15 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(result.missing_fonts).toContain('NoSuchFontXYZ')
     expect(result.glyph_fallback).toBe(true)
     expect((result.warnings as string[]).join('\n')).toContain('NoSuchFontXYZ')
+  }, 60_000)
+
+  it.runIf(canRenderDocx)('ignores fonts declared only by unused template styles', () => {
+    // python-docx's template ships a MacroText style in Courier that no paragraph
+    // uses; reporting it as missing makes every generated document look broken.
+    const file = create('documents', '字体 默认')
+    const result = runCli(python!, ['docx', 'render', '--input', file, '--out-dir', join(directory, 'render-default-fonts')])
+    expect(result.missing_fonts).not.toContain('Courier')
+    expect((result.warnings as string[]).join('\n')).not.toContain('Courier')
   }, 60_000)
 
   it('numbers PDF list items sequentially', () => {
