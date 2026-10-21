@@ -137,9 +137,10 @@ def main(argv: list[str] | None = None) -> int:
             print("error: %s" % exc, file=sys.stderr)
             return 2
         hits = 0
-        for paragraph in doc.paragraphs():
-            if tracked_replace(paragraph, old, new, args.author, stamp, counter):
-                hits += 1
+        for part in doc.text_parts():
+            for paragraph in doc.paragraphs(part):
+                if tracked_replace(paragraph, old, new, args.author, stamp, counter):
+                    hits += 1
         applied.append({"old": old, "new": new, "paragraphs": hits})
 
     settings = doc.xml("word/settings.xml")

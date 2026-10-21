@@ -250,7 +250,7 @@ class Docx:
         while self.exists("word/%s%d.xml" % (kind, index)):
             index += 1
         part = "word/%s%d.xml" % (kind, index)
-        root = etree.Element(q(kind), nsmap={"w": W, "r": R, "wp": WP, "v": V})
+        root = etree.Element(q("hdr" if kind == "header" else "ftr"), nsmap={"w": W, "r": R, "wp": WP, "v": V})
         etree.SubElement(etree.SubElement(root, q("p")), q("r"))
         self.set_xml(part, root)
         self.ensure_override(part, CT_BY_REL[rel_type])
@@ -459,45 +459,86 @@ def add_bookmark(parent, name: str, ident: int) -> None:
 
 # -- watermarks -------------------------------------------------------------
 
-_WATERMARK_SHAPETYPE = """<v:shapetype xmlns:v="urn:schemas-microsoft-com:vml" id="_x0000_t136" coordsize="21600,21600" adj="10800" path="m@7,l@8,m@5,21600l@11,21600e"><v:formulas><v:f eqn="sum #0 0 10800"/><v:f eqn="prod #0 2 1"/><v:f eqn="sum 21600 0 @1"/><v:f eqn="sum 0 0 @2"/><v:f eqn="sum 21600 0 @3"/><v:f eqn="if @0 @3 0"/><v:f eqn="if @0 21600 @1"/><v:f eqn="if @0 0 @2"/><v:f eqn="if @0 @4 21600"/><v:f eqn="mid @5 @6"/><v:f eqn="mid @8 @5"/><v:f eqn="mid @7 @8"/><v:f eqn="mid @6 @7"/><v:f eqn="sum @6 0 @5"/></v:formulas><v:path textpathok="t"/><v:textpath on="t" fitshape="t"/><v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles></v:shapetype>"""
+WATERMARK_DESCR = "DSH Office watermark"
 
-_WATERMARK_STYLE = (
-    "position:absolute;margin-left:0;margin-top:0;width:468pt;height:117pt;"
-    "rotation:-45;z-index:-251658752;mso-position-horizontal:center;"
-    "mso-position-horizontal-relative:margin;mso-position-vertical:center;"
-    "mso-position-vertical-relative:margin"
-)
+_WATERMARK_ANCHOR = """<wp:anchor xmlns:wp="%(wp)s" xmlns:a="%(a)s" xmlns:w="%(w)s" xmlns:wps="%(wps)s"
+  distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251658240"
+  behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1">
+  <wp:simplePos x="0" y="0"/>
+  <wp:positionH relativeFrom="page"><wp:align>center</wp:align></wp:positionH>
+  <wp:positionV relativeFrom="page"><wp:align>center</wp:align></wp:positionV>
+  <wp:extent cx="5486400" cy="1371600"/>
+  <wp:effectExtent l="0" t="0" r="0" b="0"/>
+  <wp:wrapNone/>
+  <wp:docPr id="%(id)d" name="PowerPlusWaterMarkObject%(id)d" descr="%(descr)s"/>
+  <wp:cNvGraphicFramePr/>
+  <a:graphic><a:graphicData uri="%(wps)s"><wps:wsp>
+    <wps:cNvSpPr/>
+    <wps:spPr>
+      <a:xfrm rot="-2700000"><a:off x="0" y="0"/><a:ext cx="5486400" cy="1371600"/></a:xfrm>
+      <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+      <a:noFill/><a:ln><a:noFill/></a:ln>
+    </wps:spPr>
+    <wps:txbx><w:txbxContent><w:p><w:pPr><w:jc w:val="center"/></w:pPr>
+      <w:r><w:rPr><w:color w:val="%(color)s"/><w:sz w:val="120"/></w:rPr><w:t>%(text)s</w:t></w:r>
+    </w:p></w:txbxContent></wps:txbx>
+    <wps:bodyPr vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0"
+      anchor="ctr" anchorCtr="0"><a:noAutofit/></wps:bodyPr>
+  </wps:wsp></a:graphicData></a:graphic>
+</wp:anchor>"""
+
+_WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
 
 
 def watermark_paragraph(text: str, ident: int = 1, color: str = "#C0C0C0"):
-    """A header paragraph holding one VML text watermark."""
+    """A header paragraph holding one DrawingML text watermark.
+
+    Word stores watermarks as VML, but VML shapes are routinely dropped by other
+    renderers, so the shape here is DrawingML (wps) and marked with a stable
+    ``descr`` so it can be found and removed again.
+    """
+    from xml.sax.saxutils import escape
+
+    color = color.lstrip("#").upper() or "C0C0C0"
     paragraph = etree.Element(q("p"))
     run = etree.SubElement(paragraph, q("r"))
     run_props = etree.SubElement(run, q("rPr"))
     etree.SubElement(run_props, q("noProof"))
-    pict = etree.SubElement(run, q("pict"))
-    pict.append(etree.fromstring(_WATERMARK_SHAPETYPE))
-    shape = etree.SubElement(pict, q("shape", V))
-    shape.set("id", "WaterMarkObject%d" % ident)
-    shape.set("type", "#_x0000_t136")
-    shape.set("style", _WATERMARK_STYLE)
-    shape.set("fillcolor", color)
-    shape.set("stroked", "f")
-    textpath = etree.SubElement(shape, q("textpath", V))
-    textpath.set("style", 'font-family:"Calibri";font-size:1pt')
-    textpath.set("string", text)
+    drawing = etree.SubElement(run, q("drawing"))
+    anchor = etree.fromstring(_WATERMARK_ANCHOR % {
+        "wp": WP,
+        "a": A,
+        "w": W,
+        "wps": _WPS_NS,
+        "id": ident,
+        "descr": WATERMARK_DESCR,
+        "color": color,
+        "text": escape(str(text)),
+    })
+    drawing.append(anchor)
     return paragraph
 
 
+def _paragraph_above(node):
+    while node is not None and node.tag != q("p"):
+        node = node.getparent()
+    return node
+
+
 def watermark_texts(doc: Docx) -> list[dict]:
-    """Every VML text watermark in the headers, with the paragraph that holds it."""
+    """Every VML or DrawingML text watermark in the headers, with its paragraph."""
     found = []
     for part in doc.names("word/header"):
-        for textpath in doc.xml(part).iter(q("textpath", V)):
-            paragraph = textpath
-            while paragraph is not None and paragraph.tag != q("p"):
-                paragraph = paragraph.getparent()
-            found.append({"part": part, "text": textpath.get("string"), "paragraph": paragraph})
+        root = doc.xml(part)
+        for textpath in root.iter(q("textpath", V)):
+            text = textpath.get("string")
+            if text:
+                found.append({"part": part, "kind": "vml", "text": text, "paragraph": _paragraph_above(textpath)})
+        for pr in root.iter(q("docPr", WP)):
+            if pr.get("descr") != WATERMARK_DESCR:
+                continue
+            text = "".join(node.text or "" for node in pr.getparent().iter(q("t")))
+            found.append({"part": part, "kind": "drawingml", "text": text, "paragraph": _paragraph_above(pr)})
     return found
 
 

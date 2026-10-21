@@ -68,6 +68,22 @@ function runScript(python: string, pack: string, script: string, args: string[])
   return runJson(python, [join(PACKAGE_ROOT, 'assets', 'skills', pack, script), ...args])
 }
 
+/** Run a script that may use exit code 1 as a report result (audits). */
+function runScriptAudit(python: string, pack: string, script: string, args: string[]): { status: number, payload: Record<string, any> } {
+  try {
+    const stdout = execFileSync(python, [join(PACKAGE_ROOT, 'assets', 'skills', pack, script), ...args], {
+      encoding: 'utf8',
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+      maxBuffer: 8 * 1024 * 1024,
+    })
+    return { status: 0, payload: JSON.parse(stdout) }
+  }
+  catch (error) {
+    const failure = error as { status?: number, stdout?: string }
+    return { status: failure.status ?? 1, payload: JSON.parse(String(failure.stdout ?? '{}')) }
+  }
+}
+
 /** Run a pack script the way a user shell would: no UTF-8 env overrides, POSIX locale. */
 function runScriptRaw(python: string, pack: string, script: string, args: string[]): Buffer {
   const env: NodeJS.ProcessEnv = { ...process.env, LC_ALL: 'C', LANG: 'C' }
@@ -154,7 +170,7 @@ describe.runIf(ready)('office CLI integration', () => {
         rows: [['季度', '收入', '成本', '毛利'], ['Q1', 100, 60, '=B2-C2'], ['Q2', 128, 70, '=B3-C3'], [null, '=SUM(B2:B3)']],
         freeze: 'A2',
         styles: { 'A1:D1': { bold: true, fill: '#E8EEF7' } },
-        charts: [{ type: 'column', anchor: 'F2', data: { min_col: 2, min_row: 1, max_col: 2, max_row: 3 } }],
+        charts: [{ type: 'column', anchor: 'F2', title: '收入趋势', data: { min_col: 2, min_row: 1, max_col: 2, max_row: 3 } }],
       }],
     },
   }
@@ -377,6 +393,18 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(readFileSync(pdf).subarray(0, 4).toString()).toBe('%PDF')
   }, 120_000)
 
+  it('draws every slide in the draft preview, including pie charts', () => {
+    const spec = join(directory, 'pptx-pie.json')
+    const deck = join(directory, '草稿 饼图.pptx')
+    writeFileSync(spec, JSON.stringify({ slides: [{ layout: 'blank', title: '分布', chart: { type: 'pie', left: 2, top: 2, width: 6, height: 4.5, categories: ['A', 'B'], series: [{ name: '占比', values: [60, 40] }] } }] }))
+    expect(runCli(python!, ['pptx', 'create', '--spec', spec, '--out', deck]).ok).toBe(true)
+    const result = runScript(python!, 'office-presentations', 'container_tools/render_slides.py', ['--input', deck, '--out-dir', join(directory, 'draft'), '--engine', 'draft'])
+    expect(result.ok).toBe(true)
+    expect(result.engine).toBe('draft-preview')
+    expect(result.slides).toBe(1)
+    expect(existsSync(result.files[0])).toBe(true)
+  }, 60_000)
+
   it.runIf(canRenderDocx)('renders PPTX slides and XLSX sheets through the LibreOffice kit', () => {
     const deck = create('presentations', '渲染 检查')
     const slides = runCli(python!, ['pptx', 'render', '--input', deck, '--out-dir', join(directory, 'render-pptx')])
@@ -387,9 +415,18 @@ describe.runIf(ready)('office CLI integration', () => {
     const sheets = runCli(python!, ['xlsx', 'render', '--input', book, '--out-dir', join(directory, 'render-xlsx')])
     expect(sheets.renderer).toBe('libreoffice-kit')
     expect(sheets.page_count).toBeGreaterThan(0)
-    for (const image of sheets.images as { sheet: string | null, range: string | null }[]) {
-      expect(image.sheet).toBeTruthy()
-      expect(image.range).toMatch(/^[A-Z]+\d+(?::[A-Z]+\d+)?$/u)
+    expect(sheets.pages.length).toBe(sheets.page_count)
+    // Converted through the PDF path, so a chart anchored outside the used range
+    // is rendered and verifiable instead of silently dropped.
+    const pdf = String(sheets.pdf)
+    expect(readFileSync(pdf).subarray(0, 4).toString()).toBe('%PDF')
+    const chartText = read('pdf', pdf).pages.map((page: { text: string }) => page.text).join('\n')
+    expect(chartText).toContain('收入趋势')
+    for (const image of sheets.images as { page: number, sheet: string | null, range: string | null, path: string }[]) {
+      expect(image.page).toBeGreaterThan(0)
+      expect(image.sheet).toBeNull()
+      expect(image.range).toBeNull()
+      expect(readFileSync(image.path).byteLength).toBeGreaterThan(5_000)
     }
   }, 120_000)
 
@@ -411,6 +448,92 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(result.glyph_fallback).toBe(true)
     expect((result.warnings as string[]).join('\n')).toContain('NoSuchFontXYZ')
   }, 60_000)
+
+  it('numbers PDF list items sequentially', () => {
+    const spec = join(directory, 'pdf-numbered.json')
+    const out = join(directory, '编号.pdf')
+    writeFileSync(spec, JSON.stringify({ title: '编号', blocks: [{ type: 'numbered', items: ['第一项', '第二项'] }] }))
+    expect(runCli(python!, ['pdf', 'create', '--spec', spec, '--out', out]).ok).toBe(true)
+    const text = read('pdf', out).pages.map((page: { text: string }) => page.text).join('\n')
+    expect(text).toContain('1. 第一项')
+    expect(text).toContain('2. 第二项')
+  })
+
+  it('counts real headings instead of every body paragraph', () => {
+    const file = create('documents', '标题 审计')
+    const report = runScript(python!, 'office-documents', 'scripts/heading_audit.py', [file])
+    expect(report.headings).toBe(2)
+    expect(report.counts.Title).toBeUndefined()
+  })
+
+  it('adds internal navigation links without the broken default path', () => {
+    const file = create('documents', '导航 基础')
+    const out = join(directory, '导航 输出.docx')
+    const result = runScript(python!, 'office-documents', 'scripts/internal_nav.py', [file, '--out', out])
+    expect(result.ok).toBe(true)
+    expect(result.entries).toBeGreaterThan(0)
+    expect(read('docx', out).paragraphs.some((paragraph: { text: string }) => paragraph.text === 'Back to contents')).toBe(true)
+  })
+
+  it('fits a table to the text width and leaves no finding', () => {
+    const file = create('documents', '表格 几何')
+    const out = join(directory, '表格 几何-修复.docx')
+    const fixed = runScript(python!, 'office-documents', 'scripts/table_geometry.py', [file, '--fix', '--out', out])
+    expect(fixed.ok).toBe(true)
+    expect(fixed.findings).toEqual([])
+    expect(runScript(python!, 'office-documents', 'scripts/table_geometry.py', [out]).findings).toEqual([])
+  })
+
+  it('records tracked replacements inside table cells', () => {
+    const spec = join(directory, 'docx-tracked.json')
+    const file = join(directory, '修订 表格.docx')
+    writeFileSync(spec, JSON.stringify({ blocks: [{ type: 'table', headers: ['区域'], rows: [['EMEA'], ['APAC']] }] }))
+    runCli(python!, ['docx', 'create', '--spec', spec, '--out', file])
+    const tracked = join(directory, '修订 表格-跟踪.docx')
+    const report = runScript(python!, 'office-documents', 'scripts/add_tracked_replacements.py', [file, '--replace', 'EMEA=Europe', '--replace', 'APAC=Asia-Pacific', '--out', tracked])
+    expect(report.replacements.map((item: { paragraphs: number }) => item.paragraphs)).toEqual([1, 1])
+    const accepted = join(directory, '修订 表格-接受.docx')
+    expect(runScript(python!, 'office-documents', 'scripts/accept_tracked_changes.py', [tracked, '--mode', 'accept', '--out', accepted]).revisions_seen).toBe(4)
+    const text = runJson(python!, ['-c', 'import json, sys; from docx import Document; d = Document(sys.argv[1]); print(json.dumps([c.text for t in d.tables for row in t.rows for c in row.cells]))', accepted])
+    expect(text).toContain('Europe')
+    expect(text).toContain('Asia-Pacific')
+  })
+
+  it.runIf(canRenderDocx)('renders a watermark through the header instead of writing an invisible shape', () => {
+    const file = create('documents', '水印 基础')
+    const marked = join(directory, '水印 标记.docx')
+    const added = runScript(python!, 'office-documents', 'scripts/watermark_add.py', [file, '--text', 'CONFIDENTIAL', '--out', marked])
+    expect(added.ok).toBe(true)
+    expect(added.text).toBe('CONFIDENTIAL')
+    expect(String(added.part)).toMatch(/header\d*\.xml$/u)
+    const render = runCli(python!, ['docx', 'render', '--input', marked, '--out-dir', join(directory, 'render-watermark'), '--pdf'])
+    expect(render.ok).toBe(true)
+    expect(read('pdf', String(render.pdf)).pages.map((page: { text: string }) => page.text).join('').replace(/\s+/gu, '')).toContain('CONFIDENTIAL')
+    const report = runScriptAudit(python!, 'office-documents', 'scripts/watermark_audit_remove.py', [marked, '--mode', 'report'])
+    expect(report.status).toBe(1)
+    expect(report.payload.watermarks).toHaveLength(1)
+    const clean = join(directory, '水印 已移除.docx')
+    expect(runScript(python!, 'office-documents', 'scripts/watermark_audit_remove.py', [marked, '--mode', 'remove', '--out', clean]).removed).toBe(1)
+    expect(runScriptAudit(python!, 'office-documents', 'scripts/watermark_audit_remove.py', [clean, '--mode', 'report']).payload.watermarks).toHaveLength(0)
+  }, 120_000)
+
+  it.runIf(canRenderDocx)('merges a footnote reference together with its notes part', () => {
+    const base = create('documents', '合并 基础')
+    const sourceSpec = join(directory, 'docx-note.json')
+    const source = join(directory, '合并 脚注源.docx')
+    writeFileSync(sourceSpec, JSON.stringify({ blocks: [{ type: 'paragraph', text: '正文[[NOTE]]' }] }))
+    runCli(python!, ['docx', 'create', '--spec', sourceSpec, '--out', source])
+    const noted = join(directory, '合并 脚注.docx')
+    expect(runScript(python!, 'office-documents', 'scripts/insert_note.py', [source, '--kind', 'footnote', '--text', '脚注内容', '--out', noted]).ok).toBe(true)
+    const merged = join(directory, '合并 完成.docx')
+    const report = runScript(python!, 'office-documents', 'scripts/merge_docx_append.py', [base, noted, '--out', merged])
+    expect(report.notes_merged).toBe(1)
+    expect(report.references_dropped).toBe(0)
+    const render = runCli(python!, ['docx', 'render', '--input', merged, '--out-dir', join(directory, 'render-merge'), '--pdf'])
+    expect(render.ok).toBe(true)
+    const notes = runJson(python!, ['-c', 'import json, sys, zipfile; z = zipfile.ZipFile(sys.argv[1]); print(json.dumps(z.read("word/footnotes.xml").decode("utf-8")))', merged])
+    expect(String(notes)).toContain('脚注内容')
+  }, 120_000)
 })
 
 describe('renderer stack', () => {

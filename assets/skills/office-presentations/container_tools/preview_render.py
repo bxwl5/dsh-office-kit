@@ -19,6 +19,7 @@ Exit codes: 0 ok, 2 unreadable input, 3 nothing rasterised.
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -254,7 +255,9 @@ def _draw_chart(page, shape, rect: fitz.Rect, slide_no: int, notes: list[dict[st
         for index, value in enumerate(values):
             sweep = 360.0 * abs(value) / total
             shade = shades[index % len(shades)]
-            page.draw_pie(center, radius, fitz.Point(radius * 1.0, 0), start, start + sweep, color=RULE, fill=(shade, shade, shade * 0.95 + 0.05), width=0.6)
+            # PyMuPDF 1.28 dropped Page.draw_pie; draw_sector has been stable since 1.16.
+            edge = fitz.Point(center.x + radius * math.cos(math.radians(start)), center.y + radius * math.sin(math.radians(start)))
+            page.draw_sector(center, edge, sweep, color=RULE, fill=(shade, shade, shade * 0.95 + 0.05), width=0.6)
             start += sweep
         return
 

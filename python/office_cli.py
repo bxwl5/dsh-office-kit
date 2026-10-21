@@ -278,7 +278,39 @@ def export_pdf(input_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
         fail(f"the LibreOffice kit reported a PDF export for {input_path.name} but wrote none")
     return {
         "pdf": str(produced),
+        "backend": report.get("backend"),
         "missing_fonts": [str(name) for name in report.get("missingFonts") or []],
+    }
+
+
+def xlsx_render(input_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
+    """Render a workbook through PDF, because the kit's direct render prints ranges only.
+
+    The direct xlsx render path rasterises each used range and drops charts, images
+    and print areas; converting first lays the sheet out the way the app prints it.
+    """
+    converted = export_pdf(input_path, out_dir, dpi)
+    pages = rasterize_pdf(converted["pdf"], out_dir, dpi)
+    missing = converted["missing_fonts"]
+    warnings = glyph_warnings(missing)
+    report_warnings(warnings)
+    return {
+        "ok": True,
+        "kind": "xlsx",
+        "command": "render",
+        "input": str(input_path),
+        "renderer": "libreoffice-kit",
+        "engine": converted.get("backend"),
+        "page_count": len(pages),
+        "pages": pages,
+        "images": [
+            {"page": index, "sheet": None, "range": None, "path": path}
+            for index, path in enumerate(pages, start=1)
+        ],
+        "pdf": converted["pdf"],
+        "missing_fonts": missing,
+        "glyph_fallback": bool(missing),
+        "warnings": warnings,
     }
 
 
@@ -769,8 +801,8 @@ def _pdf_flowables(blocks: Iterable[dict[str, Any]], font: str, counters: dict[s
 
     styles = getSampleStyleSheet()
     body = ParagraphStyle("OfficeBody", parent=styles["BodyText"], fontName=font, fontSize=10.5, leading=15)
-    heading1 = ParagraphStyle("OfficeH1", parent=styles["Heading1"], fontName=font, fontSize=18, leading=24)
-    heading2 = ParagraphStyle("OfficeH2", parent=styles["Heading2"], fontName=font, fontSize=14, leading=20)
+    heading1 = ParagraphStyle("OfficeH1", parent=styles["Heading1"], fontName=font, fontSize=18, leading=24, spaceBefore=16, spaceAfter=8)
+    heading2 = ParagraphStyle("OfficeH2", parent=styles["Heading2"], fontName=font, fontSize=14, leading=20, spaceBefore=12, spaceAfter=6)
     title = ParagraphStyle("OfficeTitle", parent=styles["Title"], fontName=font, fontSize=22, leading=28)
     flowables = []
     for block in blocks:
@@ -788,8 +820,8 @@ def _pdf_flowables(blocks: Iterable[dict[str, Any]], font: str, counters: dict[s
             flowables.append(Paragraph(escape(str(block.get("text", ""))), body))
             counters["paragraphs"] += 1
         elif block_type in {"bullets", "numbered"}:
-            for item in block.get("items", []):
-                prefix = "• " if block_type == "bullets" else "1. "
+            for index, item in enumerate(block.get("items", []), start=1):
+                prefix = "• " if block_type == "bullets" else f"{index}. "
                 flowables.append(Paragraph(prefix + escape(str(item)), body))
                 counters["list_items"] += 1
         elif block_type == "table":
@@ -1427,6 +1459,8 @@ def main() -> None:
             out_dir = Path(args.out_dir)
             if args.format == "pdf":
                 result = pdf_render(input_path, out_dir, args.dpi)
+            elif args.format == "xlsx":
+                result = xlsx_render(input_path, out_dir, args.dpi)
             else:
                 result = render_office(input_path, args.format, out_dir, args.dpi, emit_pdf=bool(getattr(args, "pdf", False)))
         elif args.command == "recalc":
