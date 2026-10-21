@@ -123,6 +123,7 @@
     "@deepseek-ai/dsh-util-code-language": "catalog:dsh",
     "@deepseek-ai/dsh-util-values": "catalog:dsh",
     "@deepseek-ai/dsh-workspace": "catalog:dsh",
+    "@deepseek-ai/libreoffice-kit": "catalog:",
     "@types/node": "catalog:types",
     "@types/react": "catalog:react",
     "@types/react-dom": "catalog:react",

@@ -13,6 +13,12 @@ packages:
   - packages/*
   - examples/*
 
+allowBuilds:
+  esbuild: true
+  koffi: false
+  simple-git-hooks: true
+catalog:
+  '@deepseek-ai/libreoffice-kit': ^0.1.5
 catalogs:
   cli:
     '@antfu/eslint-config': ^9.1.0
@@ -79,6 +85,3 @@ catalogs:
     vitest: ^4.1.10
   types:
     '@types/node': ^26.1.1
-allowBuilds:
-  esbuild: true
-  simple-git-hooks: true

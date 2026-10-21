@@ -4,7 +4,7 @@ description: Create, inspect, edit, recalculate, and verify Excel workbooks (.xl
 
 # Spreadsheets (.xlsx)
 
-A workbook is cells: each one holds a value, a format, and possibly a formula *string*. openpyxl writes all three and evaluates none of them, so a formula you just wrote has no cached result and `xlsx read` shows `=SUM(B2:B9)` where the user expects `1,950,400`. The calculation happens in an engine — Microsoft Excel or WPS Spreadsheets via `xlsx recalc`, or whatever app the user opens the file in. Everything below follows from that: write values and formulas, then verify structure by reading back, then verify numbers by recalculating, then verify appearance by rendering.
+A workbook is cells: each one holds a value, a format, and possibly a formula *string*. openpyxl writes all three and evaluates none of them, so a formula you just wrote has no cached result and `xlsx read` shows `=SUM(B2:B9)` where the user expects `1,950,400`. The calculation happens in an engine — the DSH LibreOffice via `xlsx recalc` (cross-platform), or whatever app the user opens the file in. Everything below follows from that: write values and formulas, then verify structure by reading back, then verify numbers by recalculating, then verify appearance by rendering.
 
 | User job | What is really happening | Fast path |
 | --- | --- | --- |
@@ -52,8 +52,8 @@ For xlsx the payload is `{ target, fileName, text: "", requirement, region, imag
 Three checks, in this order, after every mutation:
 
 1. **Structure and values.** `"<python>" "<cli>" xlsx read --input "<file>"` proves the cells you wrote are where you wrote them; `container_tools/inspect_workbook.py` proves charts, tables, conditional formats, names, and merges survived.
-2. **Numbers.** If any formula changed or was added, run `"<python>" "<cli>" xlsx recalc --input "<file>" --out "<file>"` and then `container_tools/recalc_gate.py --input "<file>"`. On a host without Microsoft Excel or WPS Spreadsheets the recalc fails and `recalc_gate.py` reports `unverified` — say that plainly instead of presenting an empty cache as a result.
-3. **Appearance.** `"<python>" "<cli>" xlsx render --input "<file>" --out-dir "<render-dir>"`, then `read_image` each PNG. Check titles and labels, `###` columns, clipped numbers, charts cut off by the print area, plots with no categories, legends naming `Series 1`, conditional formatting that never fired, and blank pages. The render goes through Excel, WPS Spreadsheets, or LibreOffice; with none installed it fails explicitly: report the file as structurally verified but visually unchecked, and offer to rebuild from a spec. WPS in particular needs its print area and page setup right before exporting, so a layout complaint may be the export settings rather than the sheet.
+2. **Numbers.** If any formula changed or was added, run `"<python>" "<cli>" xlsx recalc --input "<file>" --out "<file>"` and then `container_tools/recalc_gate.py --input "<file>"`. The kit recalculates on every platform; only when the kit itself is missing does the recalc fail, and `recalc_gate.py` then reports `unverified` — say that plainly instead of presenting an empty cache as a result.
+3. **Appearance.** `"<python>" "<cli>" xlsx render --input "<file>" --out-dir "<render-dir>"`, then `read_image` each PNG. Check titles and labels, `###` columns, clipped numbers, charts cut off by the print area, plots with no categories, legends naming `Series 1`, conditional formatting that never fired, and blank pages. The render goes through the DSH LibreOffice kit; when it is missing the command fails explicitly: report the file as structurally verified but visually unchecked, and offer to rebuild from a spec.
 
 Two or three render/fix passes are normal. If a defect survives three, say what still looks wrong.
 

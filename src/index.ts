@@ -1,11 +1,13 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SkillCandidate, SkillDefinition, SkillProvider } from '@deepseek-ai/dsh-skill'
 import type { RuntimeStatus } from './python'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { BUNDLED_SKILL_RANK } from '@deepseek-ai/dsh-skill'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { OFFICE_FEATURES } from './features'
@@ -37,82 +39,67 @@ function parseSkill(raw: string, path: string): ParsedSkill {
   }
 }
 
-interface RendererFacts {
-  readonly libreoffice: string | null
-  readonly microsoftOffice: {
-    readonly word: boolean
-    readonly powerpoint: boolean
-    readonly excel: boolean
-  }
-  readonly kingsoftWps: {
-    readonly writer: boolean
-    readonly presentation: boolean
-    readonly spreadsheet: boolean
-  }
+interface KitFacts {
+  readonly available: boolean
+  readonly node: string | null
+  readonly cli: string | null
+  readonly version: string | null
+  readonly backend: string | null
+  readonly error?: string
+  readonly remedy?: string
 }
 
-function findFile(candidates: readonly string[]): string | null {
-  for (const path of candidates) {
-    if (existsSync(path))
-      return path
-  }
-  return null
-}
-
-const WPS_BINARIES = { writer: 'wps.exe', presentation: 'wpp.exe', spreadsheet: 'et.exe' } as const
-const WPS_ROOTS = [
-  process.env.WPS_OFFICE_HOME ?? '',
-  'C:\\Program Files\\Kingsoft\\WPS Office',
-  'C:\\Program Files (x86)\\Kingsoft\\WPS Office',
-  join(process.env.LOCALAPPDATA ?? '', 'Kingsoft', 'WPS Office'),
-].filter(Boolean)
-
-function wpsInstalled(binary: string): boolean {
-  for (const root of WPS_ROOTS) {
-    if (existsSync(join(root, 'office6', binary)))
-      return true
-    try {
-      for (const version of readdirSync(root)) {
-        if (existsSync(join(root, version, 'office6', binary)))
-          return true
-      }
-    }
-    catch {
-      // A missing or unreadable WPS root is simply not an installation.
-    }
-  }
-  return false
-}
-
-function rendererFacts(): RendererFacts {
-  const libreoffice = findFile([
-    process.env.SOFFICE ?? '',
-    'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
-    'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe',
-    '/Applications/LibreOffice.app/Contents/MacOS/soffice',
-    '/usr/bin/soffice',
-    '/usr/local/bin/soffice',
-  ].filter(Boolean))
-  const officeRoots = [
-    'C:\\Program Files\\Microsoft Office\\root\\Office16',
-    'C:\\Program Files (x86)\\Microsoft Office\\root\\Office16',
-  ]
-  return {
-    libreoffice,
-    microsoftOffice: {
-      word: officeRoots.some(root => existsSync(join(root, 'WINWORD.EXE'))),
-      powerpoint: officeRoots.some(root => existsSync(join(root, 'POWERPNT.EXE'))),
-      excel: officeRoots.some(root => existsSync(join(root, 'EXCEL.EXE'))),
-    },
-    kingsoftWps: {
-      writer: wpsInstalled(WPS_BINARIES.writer),
-      presentation: wpsInstalled(WPS_BINARIES.presentation),
-      spreadsheet: wpsInstalled(WPS_BINARIES.spreadsheet),
-    },
-  }
-}
+const KIT_MISSING
+  = 'the DSH LibreOffice kit (@deepseek-ai/libreoffice-kit) was not found: install this plugin inside the harness tree, or point DSH_LIBREOFFICE_KIT_CLI at <kit>/lib/cli.js'
 
 const PACKAGE_ROOT = fileURLToPath(new URL('..', import.meta.url))
+
+const runKit = promisify(execFile)
+
+/** Locate the kit the same way python/office_cli.py does, so both halves agree. */
+function findKitCli(): string | null {
+  const override = process.env.DSH_LIBREOFFICE_KIT_CLI
+  if (override != null && existsSync(override))
+    return override
+  let directory = PACKAGE_ROOT
+  for (;;) {
+    const candidate = join(directory, 'node_modules', '@deepseek-ai', 'libreoffice-kit', 'lib', 'cli.js')
+    if (existsSync(candidate))
+      return candidate
+    const parent = dirname(directory)
+    if (parent === directory)
+      return null
+    directory = parent
+  }
+}
+
+async function kitFacts(): Promise<KitFacts> {
+  const cli = findKitCli()
+  if (cli == null)
+    return { available: false, node: null, cli: null, version: null, backend: null, remedy: KIT_MISSING }
+  const node = process.env.DSH_NODE ?? process.execPath
+  try {
+    const { stdout } = await runKit(node, [cli, 'capabilities', '--json'], { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 })
+    const parsed = JSON.parse(stdout) as { runtime?: { backend?: unknown, version?: unknown } }
+    return {
+      available: true,
+      node,
+      cli,
+      version: typeof parsed.runtime?.version === 'string' ? parsed.runtime.version : null,
+      backend: typeof parsed.runtime?.backend === 'string' ? parsed.runtime.backend : null,
+    }
+  }
+  catch (error) {
+    return {
+      available: true,
+      node,
+      cli,
+      version: null,
+      backend: null,
+      error: error instanceof Error ? (error.message.split('\n')[0] ?? error.message) : String(error),
+    }
+  }
+}
 
 function pluginVersion(): string {
   try {
@@ -192,7 +179,7 @@ export function apply(ctx: Context): void {
 
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'office_status',
-    description: 'Report the Office runtime state: compatible Python, installed Python packages, helper CLI path, and document renderers (LibreOffice, Microsoft Office, or WPS Office). Call this before Office file work.',
+    description: 'Report the Office runtime state: compatible Python, installed Python packages, helper CLI path, and document renderers (the DSH LibreOffice kit). Call this before Office file work.',
     parameters: {},
     output: {
       schema: { type: 'string' },
@@ -222,7 +209,7 @@ export function apply(ctx: Context): void {
             },
         cli: { path: paths.cli, exists: cliExists() },
         packages: runtime.packages,
-        renderers: rendererFacts(),
+        renderers: await kitFacts(),
         skills: candidates.map(candidate => candidate.name),
       }
       return JSON.stringify(report, null, 2)

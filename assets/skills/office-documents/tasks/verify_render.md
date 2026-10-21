@@ -8,7 +8,7 @@
 "<python>" "<cli>" docx render --input "<file.docx>" --out-dir "<render-dir>"
 ```
 
-Writes a PDF and one PNG per page, and prints their paths plus the renderer it used (Word via COM, or LibreOffice). Use the same command through `render_docx.py` when you want the JSON report and page list:
+Writes one PNG per page and prints their paths plus the renderer it used (`libreoffice-kit`); add `--pdf` to also keep a PDF. Use the same command through `render_docx.py` when you want the JSON report and page list:
 
 ```bash
 "<python>" "<skill>/render_docx.py" "<file.docx>" --output_dir "<render-dir>" --dpi 150
@@ -27,12 +27,12 @@ Open every PNG with `read_image` and check, in this order:
 
 ## When no renderer exists
 
-The runtime reports `renderers.libreoffice: null` and no Office installation. `render` then exits non-zero with a JSON error naming the missing renderer, and `render_docx.py` exits 3 with `reason: no_renderer`.
+The runtime reports `renderers.can_render.docx: false` because the DSH LibreOffice kit was not found. `render` then exits non-zero with a JSON error naming the missing renderer, and `render_docx.py` exits 3 with `reason: no_renderer`.
 
 In that state:
 
 - Verify structure with `docx read`, `docx_kit.py parts|text|xml` and the audit scripts.
-- Tell the user plainly that layout was not visually verified, and offer to install Microsoft Office, WPS Office, or LibreOffice instead of describing a page you did not see.
+- Tell the user plainly that layout was not visually verified, and that the fix is installing the plugin inside the harness tree (or setting `DSH_LIBREOFFICE_KIT_CLI`), not installing Word/LibreOffice.
 - Do not claim a file "looks good" from XML evidence alone.
 
 ## After any script edit
@@ -46,5 +46,5 @@ Re-render. Package-valid is not page-valid: a caption inserted before the paragr
 ## Pitfalls
 
 - Different renderers paginate differently. Compare like with like, and do not promise Word-perfect pagination from a LibreOffice render.
-- A render fails silently into a blank page when a font is missing; a blank page is a finding, not a rendering bug.
+- A render fails silently into a blank page when a font is missing; a blank page is a finding, not a rendering bug. `missing_fonts` / `glyph_fallback` in the render JSON tells you substitution happened.
 - Render into a fresh directory; stale PNGs from an earlier run are the classic false pass.

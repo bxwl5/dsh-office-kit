@@ -33,8 +33,8 @@ for _stream in (sys.stdout, sys.stderr):
 
 DEFAULT_ROOT = Path(__file__).resolve().parents[3]
 RENDERER_HINT = (
-    "docx/pptx/xlsx rendering needs LibreOffice, Microsoft Office, or WPS Office; "
-    "pdf rendering works without any of them (PyMuPDF)"
+    "docx/pptx/xlsx rendering needs the DSH LibreOffice kit, which ships with DeepSeek Harness; "
+    "pdf rendering needs only PyMuPDF"
 )
 
 
@@ -122,18 +122,19 @@ def cli_status(python: Path, cli: Path, timeout: float) -> dict:
 def renderer_summary(report: dict) -> dict:
     """Reduce the CLI renderer block to a simple availability answer."""
     renderers = report.get("renderers") or {}
-    office = renderers.get("microsoft_office") or {}
-    wps = renderers.get("kingsoft_wps") or {}
+    kit = renderers.get("kit") or {}
+    can_render = renderers.get("can_render") or {}
     available = {
-        "libreoffice": renderers.get("libreoffice") or None,
-        "microsoft_office": {k: office.get(k) or None for k in ("word", "powerpoint", "excel")},
-        "kingsoft_wps": {k: wps.get(k) or None for k in ("writer", "presentation", "spreadsheet")},
+        "kit": {
+            "available": bool(kit.get("available")),
+            "backend": kit.get("backend") or None,
+            "version": kit.get("version") or None,
+            "error": kit.get("error") or None,
+            "remedy": kit.get("remedy") or None,
+        },
+        "can_render": {k: bool(can_render.get(k)) for k in ("docx", "pptx", "xlsx", "pdf")},
     }
-    available["any"] = (
-        bool(available["libreoffice"])
-        or any(available["microsoft_office"].values())
-        or any(available["kingsoft_wps"].values())
-    )
+    available["any"] = bool(available["can_render"]["docx"])
     return available
 
 
@@ -244,8 +245,12 @@ def emit(args: argparse.Namespace, report: dict) -> None:
         print(f"  [{mark}] {item['distribution']:<16} {detail}{modules}")
     if "renderers" in report:
         r = report["renderers"]
-        print(f"renderer     libreoffice={r['libreoffice'] or 'none'}; "
-              f"office={r['microsoft_office']}; wps={r['kingsoft_wps']}")
+        kit = r["kit"]
+        detail = f"backend={kit['backend'] or 'none'}"
+        if kit["error"]:
+            detail += f"; error={kit['error']}"
+        print(f"renderer     libreoffice-kit available={kit['available']} {detail}; "
+              f"can_render={r['can_render']}")
     for warning in report["warnings"]:
         print(f"warning      {warning}")
     if report.get("error"):

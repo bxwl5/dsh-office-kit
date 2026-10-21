@@ -71,7 +71,7 @@ Audits may exit 1 with findings — that is a report, not a failure of the envir
 "$PY" "$R/render_docx.py" "$W/with-toc.docx" --output_dir "$W/render" --dpi 150
 ```
 
-Then open each PNG with `read_image`. Without a renderer the command exits 3 with `no_renderer`; that is the expected result on a machine with neither LibreOffice nor Word, and the rest of the test still stands.
+Then open each PNG with `read_image`. Without the DSH LibreOffice kit the command exits 3 with `no_renderer`; that is a setup problem, not a document problem, and the rest of the test still stands.
 
 ## 6. Deliver
 
