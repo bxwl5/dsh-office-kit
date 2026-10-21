@@ -1,5 +1,5 @@
 ---
-description: Drive a workbook that is already open in Excel or WPS Spreadsheets on Windows over COM: read cells, write values and formulas, style ranges, add charts and tables, recalculate, save, and report the exact ranges touched.
+description: 'Drive a workbook that is already open in Excel or WPS Spreadsheets on Windows over COM: read cells, write values and formulas, style ranges, add charts and tables, recalculate, save, and report the exact ranges touched.'
 ---
 
 # Live spreadsheets (Excel / WPS)
