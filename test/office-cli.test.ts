@@ -1,7 +1,8 @@
 import type { OfficeFeatureId } from '../src/features'
 import { Buffer } from 'node:buffer'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
@@ -9,7 +10,6 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { featureByCommand, featureById, OFFICE_FEATURES } from '../src/features'
 import { officePaths, venvPython } from '../src/python'
 
-const isWindows = process.platform === 'win32'
 const PACKAGE_ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/u, '$1')
 
 function configuredPython(): string | undefined {
@@ -17,7 +17,7 @@ function configuredPython(): string | undefined {
   // Read the same paths the host half resolves. Hardcoding the Windows-shaped
   // config location here made every integration test skip on Linux.
   const paths = officePaths()
-  for (const config of [paths.configFile, paths.legacyConfigFile]) {
+  for (const config of [paths.configFile, ...paths.legacyConfigFiles]) {
     if (!existsSync(config))
       continue
     try {
@@ -30,7 +30,6 @@ function configuredPython(): string | undefined {
     }
   }
   candidates.push(venvPython(paths.venv))
-  candidates.push(join(PACKAGE_ROOT, '.venv-check', isWindows ? 'Scripts/python.exe' : 'bin/python'))
   candidates.push('python3', 'python')
   return candidates.find(candidate => candidate != null && (candidate.includes('/') || candidate.includes('\\') ? existsSync(candidate) : true))
 }
@@ -88,6 +87,11 @@ if (python != null) {
   }
 }
 const ready = status != null && status.packages.every(item => item.installed)
+
+// CI sets this so a platform without a working kit fails instead of quietly skipping.
+const requireRenderer = process.env.DSH_OFFICE_REQUIRE_RENDERER === '1'
+const canRenderDocx = requireRenderer || status?.renderers.can_render.docx === true
+const canRecalculate = requireRenderer || status?.renderers.can_recalculate.xlsx === true
 
 describe('feature registry', () => {
   it('exposes four stable ids and slash commands', () => {
@@ -294,7 +298,56 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(existsSync(png)).toBe(true)
   })
 
-  it.runIf(status?.renderers.can_recalculate.xlsx === true)('recalculates XLSX formulas through the LibreOffice kit', () => {
+  it('reports the live-control skill as unusable instead of crashing', () => {
+    // Excel/WPS live control is Windows COM territory; every other platform, and a
+    // Windows box with nothing open, must fail with one JSON object, not a traceback.
+    const script = join(PACKAGE_ROOT, 'assets', 'skills', 'excel-live-control', 'container_tools', 'live_excel.py')
+    let exitCode = 0
+    let stdout = ''
+    try {
+      stdout = execFileSync(python!, [script, 'info'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    }
+    catch (error) {
+      const failure = error as { status?: number, stdout?: string }
+      exitCode = failure.status ?? 0
+      stdout = String(failure.stdout ?? '')
+    }
+    const payload = JSON.parse(stdout)
+    expect(payload.ok).toBe(false)
+    expect(payload.stage).toBe(process.platform === 'win32' ? 'attach' : 'powershell')
+    expect(exitCode).toBe(process.platform === 'win32' ? 1 : 3)
+    if (process.platform === 'win32')
+      expect(String(payload.remediation)).toMatch(/Excel|WPS/u)
+    else
+      expect(String(payload.error)).toMatch(/Windows PowerShell 5\.1/u)
+  }, 60_000)
+
+  it.runIf(ready)('refreshes a stale interpreter record after the venv moves', async () => {
+    const config = join(directory, 'stale-config.json')
+    writeFileSync(config, JSON.stringify({
+      python: join(directory, 'gone', 'python.exe'),
+      libreofficeKit: { node: process.execPath, cli: 'kept' },
+    }))
+    const { inspectRuntime } = await import('../src/python')
+    const resolved = await inspectRuntime(config)
+    expect(resolved.state).toBe('ok')
+    const recorded = JSON.parse(readFileSync(config, 'utf8'))
+    expect(recorded.python).toBe(resolved.python?.path)
+    expect(recorded.libreofficeKit).toEqual({ node: process.execPath, cli: 'kept' })
+  }, 60_000)
+
+  it.runIf(requireRenderer)('loads the LibreOffice kit backend for this platform', () => {
+    const kit = status?.renderers.kit
+    expect(kit?.available).toBe(true)
+    expect(['native', 'wasm']).toContain(kit?.backend)
+    expect(status?.renderers.can_render).toEqual({ docx: true, pptx: true, xlsx: true, pdf: true })
+    expect(status?.renderers.can_recalculate).toEqual({ xlsx: true })
+    // The kit ships a native engine for macOS and Windows and falls back to WASM elsewhere.
+    if (process.platform === 'linux')
+      expect(kit?.backend).toBe('wasm')
+  }, 60_000)
+
+  it.runIf(canRecalculate)('recalculates XLSX formulas through the LibreOffice kit', () => {
     const file = create('spreadsheets', '财务 模型-计算前')
     const out = join(directory, '财务 模型-计算后.xlsx')
     const result = runCli(python!, ['xlsx', 'recalc', '--input', file, '--out', out])
@@ -306,10 +359,10 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(rows[3][1]).toBe(228)
   }, 60_000)
 
-  it.runIf(status?.renderers.can_render.docx === true)('renders DOCX pages to PNG through the LibreOffice kit', () => {
+  it.runIf(canRenderDocx)('renders DOCX pages to PNG through the LibreOffice kit', () => {
     const file = create('documents', '季度 报告-渲染')
     const out = join(directory, 'render')
-    const result = runCli(python!, ['docx', 'render', '--input', file, '--out-dir', out])
+    const result = runCli(python!, ['docx', 'render', '--input', file, '--out-dir', out, '--pdf'])
     expect(result.renderer).toBe('libreoffice-kit')
     expect(['native', 'wasm']).toContain(result.engine)
     expect(result.page_count).toBeGreaterThan(0)
@@ -320,9 +373,35 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(pages.length).toBe(result.page_count)
     for (const page of pages)
       expect(readFileSync(join(out, page)).byteLength).toBeGreaterThan(10_000)
-  }, 60_000)
+    const pdf = String(result.pdf)
+    expect(readFileSync(pdf).subarray(0, 4).toString()).toBe('%PDF')
+  }, 120_000)
 
-  it.runIf(status?.renderers.can_render.docx === true)('reports substituted fonts instead of silently producing tofu', () => {
+  it.runIf(canRenderDocx)('renders PPTX slides and XLSX sheets through the LibreOffice kit', () => {
+    const deck = create('presentations', '渲染 检查')
+    const slides = runCli(python!, ['pptx', 'render', '--input', deck, '--out-dir', join(directory, 'render-pptx')])
+    expect(slides.renderer).toBe('libreoffice-kit')
+    expect(slides.page_count).toBeGreaterThan(0)
+    expect(slides.pages.length).toBe(slides.page_count)
+    const book = create('spreadsheets', '渲染 表格')
+    const sheets = runCli(python!, ['xlsx', 'render', '--input', book, '--out-dir', join(directory, 'render-xlsx')])
+    expect(sheets.renderer).toBe('libreoffice-kit')
+    expect(sheets.page_count).toBeGreaterThan(0)
+    for (const image of sheets.images as { sheet: string | null, range: string | null }[]) {
+      expect(image.sheet).toBeTruthy()
+      expect(image.range).toMatch(/^[A-Z]+\d+(?::[A-Z]+\d+)?$/u)
+    }
+  }, 120_000)
+
+  it.runIf(canRenderDocx)('rasterises PDF pages exported by the kit', () => {
+    const file = create('documents', 'PDF 栅格-来源')
+    const result = runCli(python!, ['docx', 'render', '--input', file, '--out-dir', join(directory, 'render-pdf-src'), '--pdf'])
+    const pages = runCli(python!, ['pdf', 'render', '--input', String(result.pdf), '--out-dir', join(directory, 'pdf-pages')])
+    expect(pages.page_count).toBeGreaterThan(0)
+    expect(pages.pages.length).toBe(pages.page_count)
+  }, 120_000)
+
+  it.runIf(canRenderDocx)('reports substituted fonts instead of silently producing tofu', () => {
     const file = join(directory, '缺字体.docx')
     const script = 'import sys\nfrom docx import Document\nd = Document()\nr = d.add_paragraph("fallback 缺字体").runs[0]\nr.font.name = "NoSuchFontXYZ"\nd.save(sys.argv[1])'
     execFileSync(python!, ['-c', script, file])
@@ -341,4 +420,34 @@ describe('renderer stack', () => {
       expect(source, relative).not.toMatch(/powershell|ComObject|KWps|Ket\.Application|soffice/iu)
     }
   })
+})
+
+describe.runIf(ready)('kit discovery handoff', () => {
+  it('uses the path the host recorded in config.json from a tree that has no kit', () => {
+    // A profile install keeps the plugin and the kit in different trees, so the
+    // helper must trust the record instead of walking up.
+    const kitCli = createRequire(import.meta.url).resolve('@deepseek-ai/libreoffice-kit/cli')
+    const root = mkdtempSync(join(tmpdir(), 'dsh office handoff '))
+    mkdirSync(join(root, 'python'), { recursive: true })
+    copyFileSync(join(PACKAGE_ROOT, 'package.json'), join(root, 'package.json'))
+    copyFileSync(join(PACKAGE_ROOT, 'python', 'office_cli.py'), join(root, 'python', 'office_cli.py'))
+    const config = join(root, 'config.json')
+    writeFileSync(config, JSON.stringify({ python: 'untouched', libreofficeKit: { node: process.execPath, cli: kitCli } }))
+    const helper = join(root, 'python', 'office_cli.py')
+    // Isolate the legacy config locations too: this machine may still have one, and
+    // the helper reads those as fallbacks by design.
+    const isolated: NodeJS.ProcessEnv = {
+      ...process.env,
+      DSH_OFFICE_CONFIG: config,
+      APPDATA: join(root, 'appdata'),
+      XDG_CONFIG_HOME: join(root, 'xdg'),
+      HOME: join(root, 'home'),
+    }
+    delete isolated.DSH_LIBREOFFICE_KIT_CLI
+    const report = JSON.parse(execFileSync(python!, [helper, 'status'], { encoding: 'utf8', env: isolated }))
+    expect(report.renderers.kit.available).toBe(true)
+    expect(report.renderers.kit.cli).toBe(kitCli)
+    const without = JSON.parse(execFileSync(python!, [helper, 'status'], { encoding: 'utf8', env: { ...isolated, DSH_OFFICE_CONFIG: join(root, 'missing.json') } }))
+    expect(without.renderers.kit.available).toBe(false)
+  }, 60_000)
 })

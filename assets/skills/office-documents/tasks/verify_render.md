@@ -32,7 +32,7 @@ The runtime reports `renderers.can_render.docx: false` because the DSH LibreOffi
 In that state:
 
 - Verify structure with `docx read`, `docx_kit.py parts|text|xml` and the audit scripts.
-- Tell the user plainly that layout was not visually verified, and that the fix is a harness install that ships the kit (the plugin injects `DSH_LIBREOFFICE_KIT_CLI` when it loads), not installing Word/LibreOffice.
+- Tell the user plainly that layout was not visually verified, and that the fix is a harness install that ships the kit (the plugin records its path in `config.json` when it loads), not installing Word/LibreOffice.
 - Do not claim a file "looks good" from XML evidence alone.
 
 ## After any script edit

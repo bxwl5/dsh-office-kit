@@ -1,8 +1,8 @@
 import type { ChildProcess } from 'node:child_process'
 import { execFile } from 'node:child_process'
-import { readFileSync, statSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
@@ -34,20 +34,16 @@ const FAILURE_RETRY_DELAY = 5 * 60 * 1000
 /** Absolute paths this plugin owns inside a user profile. */
 export interface OfficePaths {
   readonly configFile: string
-  readonly legacyConfigFile: string
+  readonly legacyConfigFiles: readonly string[]
   readonly venv: string
   readonly legacyVenv: string
   readonly cli: string
   readonly skillsDir: string
 }
 
-function configDir(): string {
-  const home = homedir()
-  return process.platform === 'win32'
-    ? join(process.env.APPDATA ?? join(home, 'AppData', 'Roaming'), 'dsh-office-kit')
-    : process.platform === 'darwin'
-      ? join(home, 'Library', 'Application Support', 'dsh-office-kit')
-      : join(process.env.XDG_CONFIG_HOME ?? join(home, '.config'), 'dsh-office-kit')
+/** Where every version of this plugin keeps its runtime, next to DSH's own data. */
+function officeHome(): string {
+  return join(homedir(), '.dsh', 'office')
 }
 
 function legacyDataDir(): string {
@@ -59,19 +55,31 @@ function legacyDataDir(): string {
       : join(process.env.XDG_DATA_HOME ?? join(home, '.local', 'share'), 'dsh-office-kit')
 }
 
-/** Config location written by versions that ignored the platform branch. */
-function legacyConfigFile(): string {
-  return process.platform === 'win32'
-    ? join(configDir(), 'config.json')
-    : join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'dsh-office-kit', 'config.json')
+/**
+ * Config files older versions wrote, newest first.
+ *
+ * The pre-0.5 config stayed in the OS config directory (`%APPDATA%\dsh-office-kit`,
+ * `$XDG_CONFIG_HOME/dsh-office-kit`, `~/Library/Application Support/dsh-office-kit`).
+ * Reading them keeps an upgraded install from rebuilding or mis-reporting its venv.
+ */
+function legacyConfigFiles(): string[] {
+  const home = homedir()
+  return [...new Set([
+    process.platform === 'win32'
+      ? join(process.env.APPDATA ?? join(home, 'AppData', 'Roaming'), 'dsh-office-kit', 'config.json')
+      : process.platform === 'darwin'
+        ? join(home, 'Library', 'Application Support', 'dsh-office-kit', 'config.json')
+        : join(process.env.XDG_CONFIG_HOME ?? join(home, '.config'), 'dsh-office-kit', 'config.json'),
+    join(process.env.APPDATA ?? join(home, 'AppData', 'Roaming'), 'dsh-office-kit', 'config.json'),
+  ])]
 }
 
 /** Resolve per-OS config/data directories and bundled resources. */
 export function officePaths(): OfficePaths {
-  const runtimeDir = join(homedir(), '.dsh', 'office', 'runtime')
+  const runtimeDir = join(officeHome(), 'runtime')
   return {
-    configFile: join(configDir(), 'config.json'),
-    legacyConfigFile: legacyConfigFile(),
+    configFile: join(officeHome(), 'config.json'),
+    legacyConfigFiles: legacyConfigFiles(),
     venv: join(runtimeDir, 'venv'),
     legacyVenv: join(legacyDataDir(), 'venv'),
     cli: join(PACKAGE_ROOT, 'python', 'office_cli.py'),
@@ -233,10 +241,11 @@ interface SavedPython {
 
 /**
  * Read the interpreter path postinstall recorded; malformed files are ignored.
- * The legacy location is read second so an upgrade does not orphan a ready venv.
+ * The legacy locations are read after the canonical one so an upgrade does not
+ * orphan a ready venv.
  */
-function savedPython(configFile: string, legacyConfigFile?: string): string | undefined {
-  const files = legacyConfigFile == null ? [configFile] : [configFile, legacyConfigFile]
+function savedPython(configFile: string, legacyConfigFiles: readonly string[] = []): string | undefined {
+  const files = [configFile, ...legacyConfigFiles]
   for (const file of files) {
     if (!isFile(file))
       continue
@@ -252,6 +261,73 @@ function savedPython(configFile: string, legacyConfigFile?: string): string | un
   return undefined
 }
 
+/**
+ * Read the plugin config, falling back to files older versions wrote.
+ *
+ * The canonical file wins key by key, so a legacy record contributes only what
+ * the new file has not written yet (an upgrade usually still needs its venv).
+ */
+function loadConfig(configFile: string): Record<string, unknown> {
+  const legacy = officePaths().legacyConfigFiles
+  const merged: Record<string, unknown> = {}
+  for (const file of [...legacy].reverse()) {
+    try {
+      const parsed = JSON.parse(readFileSync(file, 'utf8')) as unknown
+      if (parsed != null && typeof parsed === 'object' && !Array.isArray(parsed))
+        Object.assign(merged, parsed as Record<string, unknown>)
+    }
+    catch {
+      // Missing or corrupt legacy file: nothing to inherit.
+    }
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(configFile, 'utf8')) as unknown
+    if (parsed != null && typeof parsed === 'object' && !Array.isArray(parsed))
+      Object.assign(merged, parsed as Record<string, unknown>)
+  }
+  catch {
+    // First run: the legacy values, or an empty record.
+  }
+  return merged
+}
+
+/**
+ * Merge one key into the plugin's config without disturbing the rest.
+ *
+ * Versions that predate the current layout left stale absolute paths behind, so
+ * the record is refreshed whenever the host resolves something different.
+ */
+function saveRecord(configFile: string, key: string, value: unknown): void {
+  const config = loadConfig(configFile)
+  if (JSON.stringify(config[key]) === JSON.stringify(value) && isFile(configFile))
+    return
+  const temporary = `${configFile}.${process.pid}.tmp`
+  try {
+    mkdirSync(dirname(configFile), { recursive: true })
+    writeFileSync(temporary, `${JSON.stringify({ ...config, [key]: value }, null, 2)}\n`, 'utf8')
+    renameSync(temporary, configFile)
+  }
+  catch {
+    // A read-only config must not stop the plugin from loading.
+  }
+}
+
+/**
+ * Record the renderer the harness loaded so every later helper call finds it.
+ *
+ * A profile install keeps the plugin in `~/.dsh/profiles/<name>/node_modules`
+ * and the kit in the harness tree, so no walk-up from the plugin can reach it.
+ * The helper reads this record first; a read-only config must not stop loading.
+ */
+export function saveKitPath(configFile: string, node: string, cli: string): void {
+  saveRecord(configFile, 'libreofficeKit', { node, cli })
+}
+
+/** Record the interpreter this plugin settled on so the next probe can trust it. */
+export function savePythonPath(configFile: string, python: string): void {
+  saveRecord(configFile, 'python', python)
+}
+
 /** The interpreter inside a virtual environment, which differs per platform. */
 export function venvPython(venv: string): string {
   return join(venv, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
@@ -264,19 +340,16 @@ function candidates(configFile: string): string[] {
   const env = process.env.DSH_OFFICE_PYTHON
   if (env != null && env.length > 0)
     found.push(env)
-  const saved = savedPython(configFile, paths.legacyConfigFile)
+  // The canonical venv outranks the recorded path: a record written before the
+  // layout moved still names the legacy venv, which postinstall now migrates.
+  found.push(venvPython(paths.venv))
+  const saved = savedPython(configFile, paths.legacyConfigFiles)
   if (saved != null)
     found.push(saved)
   // The venv roots are directories; the probe must receive the interpreter inside
   // them. Pushing the directory made every plugin-owned candidate fail with EACCES
   // and silently demoted the runtime to a bare system interpreter.
-  found.push(venvPython(paths.venv), venvPython(paths.legacyVenv))
-  const marker = join(PACKAGE_ROOT, '.python-path')
-  if (isFile(marker)) {
-    const text = readFileSync(marker, 'utf8').trim()
-    if (text.length > 0)
-      found.push(text)
-  }
+  found.push(venvPython(paths.legacyVenv))
   for (const name of ['python3', 'python'])
     found.push(name)
   if (process.platform === 'win32') {
@@ -356,10 +429,23 @@ export async function inspectRuntime(configFile = officePaths().configFile): Pro
       const inspection = await inspectPython(expanded)
       seen.push(inspection)
       if (inspection.compatible && inspection.missing.length === 0)
-        return selectRuntime(seen)
+        return settledRuntime(seen, configFile)
     }
   }
-  return selectRuntime(seen)
+  return settledRuntime(seen, configFile)
+}
+
+/**
+ * Freeze the probe result and keep config.json honest about which interpreter won.
+ *
+ * A venv migrated out of the legacy data directory leaves the old absolute path
+ * recorded; rewriting it stops the next launch from probing a dead path first.
+ */
+function settledRuntime(seen: PythonInspection[], configFile: string): RuntimeStatus {
+  const status = selectRuntime(seen)
+  if (status.state === 'ok' && status.python != null && status.python.path !== savedPython(configFile))
+    savePythonPath(configFile, status.python.path)
+  return status
 }
 
 /** Run postinstall.mjs as a child process; resolve with an error summary or undefined. */

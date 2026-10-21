@@ -4,6 +4,11 @@ description: Drive a workbook that is already open in Excel or WPS Spreadsheets 
 
 # Live spreadsheets (Excel / WPS)
 
+> Windows only. This skill drives an already-open Excel or WPS Spreadsheets window
+> through COM using Windows PowerShell 5.1 (`Marshal.GetActiveObject`, which
+> PowerShell 7 dropped). On macOS and Linux every command exits `3` with
+> `stage: "powershell"` and a remedy; use the file-based `xlsx` verbs there instead.
+
 ## What "live" means here
 
 The workbook is open in a running Excel or WPS Spreadsheets window, and the user is

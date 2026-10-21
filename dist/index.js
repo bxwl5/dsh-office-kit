@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import process from "node:process";
@@ -125,24 +125,31 @@ const POSTINSTALL_SCRIPT = join(PACKAGE_ROOT, "postinstall.mjs");
 const POSTINSTALL_TIMEOUT = 540 * 1e3;
 /** Failed probes are retried after this delay instead of re-running pip on every status call. */
 const FAILURE_RETRY_DELAY = 300 * 1e3;
-function configDir() {
-	const home = homedir();
-	return process.platform === "win32" ? join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "dsh-office-kit") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-kit") : join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), "dsh-office-kit");
+/** Where every version of this plugin keeps its runtime, next to DSH's own data. */
+function officeHome() {
+	return join(homedir(), ".dsh", "office");
 }
 function legacyDataDir() {
 	const home = homedir();
 	return process.platform === "win32" ? join(process.env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "dsh-office-kit") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-kit") : join(process.env.XDG_DATA_HOME ?? join(home, ".local", "share"), "dsh-office-kit");
 }
-/** Config location written by versions that ignored the platform branch. */
-function legacyConfigFile() {
-	return process.platform === "win32" ? join(configDir(), "config.json") : join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "dsh-office-kit", "config.json");
+/**
+* Config files older versions wrote, newest first.
+*
+* The pre-0.5 config stayed in the OS config directory (`%APPDATA%\dsh-office-kit`,
+* `$XDG_CONFIG_HOME/dsh-office-kit`, `~/Library/Application Support/dsh-office-kit`).
+* Reading them keeps an upgraded install from rebuilding or mis-reporting its venv.
+*/
+function legacyConfigFiles() {
+	const home = homedir();
+	return [.../* @__PURE__ */ new Set([process.platform === "win32" ? join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "dsh-office-kit", "config.json") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-kit", "config.json") : join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), "dsh-office-kit", "config.json"), join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "dsh-office-kit", "config.json")])];
 }
 /** Resolve per-OS config/data directories and bundled resources. */
 function officePaths() {
-	const runtimeDir = join(homedir(), ".dsh", "office", "runtime");
+	const runtimeDir = join(officeHome(), "runtime");
 	return {
-		configFile: join(configDir(), "config.json"),
-		legacyConfigFile: legacyConfigFile(),
+		configFile: join(officeHome(), "config.json"),
+		legacyConfigFiles: legacyConfigFiles(),
 		venv: join(runtimeDir, "venv"),
 		legacyVenv: join(legacyDataDir(), "venv"),
 		cli: join(PACKAGE_ROOT, "python", "office_cli.py"),
@@ -244,10 +251,11 @@ function failedInspection(path, error) {
 }
 /**
 * Read the interpreter path postinstall recorded; malformed files are ignored.
-* The legacy location is read second so an upgrade does not orphan a ready venv.
+* The legacy locations are read after the canonical one so an upgrade does not
+* orphan a ready venv.
 */
-function savedPython(configFile, legacyConfigFile) {
-	const files = legacyConfigFile == null ? [configFile] : [configFile, legacyConfigFile];
+function savedPython(configFile, legacyConfigFiles = []) {
+	const files = [configFile, ...legacyConfigFiles];
 	for (const file of files) {
 		if (!isFile(file)) continue;
 		try {
@@ -255,6 +263,61 @@ function savedPython(configFile, legacyConfigFile) {
 			if (typeof parsed.python === "string" && parsed.python.length > 0) return parsed.python;
 		} catch {}
 	}
+}
+/**
+* Read the plugin config, falling back to files older versions wrote.
+*
+* The canonical file wins key by key, so a legacy record contributes only what
+* the new file has not written yet (an upgrade usually still needs its venv).
+*/
+function loadConfig(configFile) {
+	const legacy = officePaths().legacyConfigFiles;
+	const merged = {};
+	for (const file of [...legacy].reverse()) try {
+		const parsed = JSON.parse(readFileSync(file, "utf8"));
+		if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) Object.assign(merged, parsed);
+	} catch {}
+	try {
+		const parsed = JSON.parse(readFileSync(configFile, "utf8"));
+		if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) Object.assign(merged, parsed);
+	} catch {}
+	return merged;
+}
+/**
+* Merge one key into the plugin's config without disturbing the rest.
+*
+* Versions that predate the current layout left stale absolute paths behind, so
+* the record is refreshed whenever the host resolves something different.
+*/
+function saveRecord(configFile, key, value) {
+	const config = loadConfig(configFile);
+	if (JSON.stringify(config[key]) === JSON.stringify(value) && isFile(configFile)) return;
+	const temporary = `${configFile}.${process.pid}.tmp`;
+	try {
+		mkdirSync(dirname(configFile), { recursive: true });
+		writeFileSync(temporary, `${JSON.stringify({
+			...config,
+			[key]: value
+		}, null, 2)}\n`, "utf8");
+		renameSync(temporary, configFile);
+	} catch {}
+}
+/**
+* Record the renderer the harness loaded so every later helper call finds it.
+*
+* A profile install keeps the plugin in `~/.dsh/profiles/<name>/node_modules`
+* and the kit in the harness tree, so no walk-up from the plugin can reach it.
+* The helper reads this record first; a read-only config must not stop loading.
+*/
+function saveKitPath(configFile, node, cli) {
+	saveRecord(configFile, "libreofficeKit", {
+		node,
+		cli
+	});
+}
+/** Record the interpreter this plugin settled on so the next probe can trust it. */
+function savePythonPath(configFile, python) {
+	saveRecord(configFile, "python", python);
 }
 /** The interpreter inside a virtual environment, which differs per platform. */
 function venvPython(venv) {
@@ -266,14 +329,10 @@ function candidates(configFile) {
 	const found = [];
 	const env = process.env.DSH_OFFICE_PYTHON;
 	if (env != null && env.length > 0) found.push(env);
-	const saved = savedPython(configFile, paths.legacyConfigFile);
+	found.push(venvPython(paths.venv));
+	const saved = savedPython(configFile, paths.legacyConfigFiles);
 	if (saved != null) found.push(saved);
-	found.push(venvPython(paths.venv), venvPython(paths.legacyVenv));
-	const marker = join(PACKAGE_ROOT, ".python-path");
-	if (isFile(marker)) {
-		const text = readFileSync(marker, "utf8").trim();
-		if (text.length > 0) found.push(text);
-	}
+	found.push(venvPython(paths.legacyVenv));
 	for (const name of ["python3", "python"]) found.push(name);
 	if (process.platform === "win32") {
 		for (const version of [
@@ -344,9 +403,20 @@ async function inspectRuntime(configFile = officePaths().configFile) {
 		if (expanded !== candidate && !isFile(expanded)) continue;
 		const inspection = await inspectPython(expanded);
 		seen.push(inspection);
-		if (inspection.compatible && inspection.missing.length === 0) return selectRuntime(seen);
+		if (inspection.compatible && inspection.missing.length === 0) return settledRuntime(seen, configFile);
 	}
-	return selectRuntime(seen);
+	return settledRuntime(seen, configFile);
+}
+/**
+* Freeze the probe result and keep config.json honest about which interpreter won.
+*
+* A venv migrated out of the legacy data directory leaves the old absolute path
+* recorded; rewriting it stops the next launch from probing a dead path first.
+*/
+function settledRuntime(seen, configFile) {
+	const status = selectRuntime(seen);
+	if (status.state === "ok" && status.python != null && status.python.path !== savedPython(configFile)) savePythonPath(configFile, status.python.path);
+	return status;
 }
 /** Run postinstall.mjs as a child process; resolve with an error summary or undefined. */
 function runPostinstall() {
@@ -433,7 +503,7 @@ function parseSkill(raw, path) {
 		content: raw.slice(match[0].length).trim()
 	};
 }
-const KIT_MISSING = "the DSH LibreOffice kit (@deepseek-ai/libreoffice-kit) was not found: DeepSeek Harness normally injects DSH_LIBREOFFICE_KIT_CLI, so point that variable at <kit>/lib/cli.js if this plugin runs outside the harness";
+const KIT_MISSING = "the DSH LibreOffice kit (@deepseek-ai/libreoffice-kit) was not found: the plugin records where the harness loaded it from in dsh-office-kit's config.json, and DSH_LIBREOFFICE_KIT_CLI overrides that for a plugin running outside the harness";
 const runKit = promisify(execFile);
 async function kitFacts() {
 	const cli = resolveKitCli();
@@ -495,10 +565,7 @@ function apply(ctx) {
 	const paths = officePaths();
 	const candidates = [];
 	const kitCli = resolveKitCli();
-	if (kitCli != null) {
-		process.env.DSH_LIBREOFFICE_KIT_CLI ??= kitCli;
-		process.env.DSH_NODE ??= process.execPath;
-	}
+	if (kitCli != null) saveKitPath(paths.configFile, process.execPath, kitCli);
 	for (const feature of OFFICE_FEATURES) {
 		const directory = join(paths.skillsDir, feature.skill);
 		const path = join(directory, "SKILL.md");
@@ -542,12 +609,17 @@ function apply(ctx) {
 			}
 			const parsed = parseSkill(raw, path);
 			const runtime = await ensureRuntime(paths.configFile);
-			const pythonLine = runtime.state === "ok" && runtime.python != null ? `\n\n## Office runtime\n\nUse these verified absolute paths for every helper command. Quote paths that contain spaces. \`skill\` is this skill's own directory: every script it names lives at \`<skill>/scripts/...\`; \`shared\` holds the cross-format workflow notes.\n\n\`\`\`json\n${JSON.stringify({
+			const kitCli = resolveKitCli();
+			const pythonLine = runtime.state === "ok" && runtime.python != null ? `\n\n## Office runtime\n\nUse these verified absolute paths for every helper command. Quote paths that contain spaces. \`skill\` is this skill's own directory: every script it names lives at \`<skill>/scripts/...\`; \`shared\` holds the cross-format workflow notes; the helper finds \`renderer\` on its own, so never pass it.\n\n\`\`\`json\n${JSON.stringify({
 				python: runtime.python.path,
 				cli: paths.cli,
 				skill: dirname(path).split("\\").join("/"),
 				shared: join(paths.skillsDir, "shared").split("\\").join("/"),
-				version: runtime.python.version
+				version: runtime.python.version,
+				...kitCli == null ? {} : { renderer: {
+					kind: "libreoffice-kit",
+					cli: kitCli
+				} }
 			}, null, 2)}\n\`\`\`` : `\n\n## Office runtime\n\nNo working Python runtime is available: ${runtimeReason(runtime)}. Do not run helper commands or claim success. Tell the user to run \`${runtime.remedy}\`, then call \`office_status\` again.`;
 			const { rank: _rank, locator: _locator, ...summary } = candidate;
 			return {
@@ -597,6 +669,10 @@ function apply(ctx) {
 				cli: {
 					path: paths.cli,
 					exists: cliExists()
+				},
+				config: {
+					path: paths.configFile,
+					exists: existsSync(paths.configFile)
 				},
 				packages: runtime.packages,
 				renderers: await kitFacts(),

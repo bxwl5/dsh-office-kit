@@ -1,11 +1,14 @@
-import { homedir } from 'node:os'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
 import {
   CONFIG_DIR,
+  CONFIG_FILE,
   installerArguments,
   LEGACY_VENV_DIR,
+  migrateLegacyVenv,
   RUNTIME_DIR,
   VENV_DIR,
 } from '../postinstall.mjs'
@@ -39,6 +42,24 @@ describe('runtime layout', () => {
     expect(LEGACY_VENV_DIR).not.toBe(VENV_DIR)
     expect(LEGACY_VENV_DIR).toContain('dsh-office-kit')
   })
+
+  it('moves an upgraded install off the legacy venv instead of reusing it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-office-migrate-'))
+    try {
+      const legacy = join(root, 'legacy', 'venv')
+      const target = join(root, 'runtime', 'venv')
+      const interpreter = join(legacy, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
+      mkdirSync(join(interpreter, '..'), { recursive: true })
+      writeFileSync(interpreter, '')
+      expect(migrateLegacyVenv(legacy, target)).toBe(true)
+      expect(existsSync(interpreter.replace(legacy, target))).toBe(true)
+      expect(existsSync(legacy)).toBe(false)
+      expect(migrateLegacyVenv(legacy, target)).toBe(false)
+    }
+    finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('config location', () => {
@@ -48,14 +69,18 @@ describe('config location', () => {
     expect(join(CONFIG_DIR, 'config.json')).toBe(officePaths().configFile)
   })
 
-  it('uses the XDG config directory on Linux', () => {
-    if (process.platform !== 'linux')
-      return
-    expect(CONFIG_DIR.startsWith(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'))).toBe(true)
-    expect(CONFIG_DIR).not.toContain('AppData')
+  it('keeps everything the plugin owns under ~/.dsh/office', () => {
+    expect(CONFIG_DIR).toBe(join(homedir(), '.dsh', 'office'))
+    expect(CONFIG_FILE).toBe(join(CONFIG_DIR, 'config.json'))
+    expect(VENV_DIR.startsWith(CONFIG_DIR)).toBe(true)
   })
 
-  it('records a legacy config location the host half can still read', () => {
-    expect(officePaths().legacyConfigFile).toContain('dsh-office-kit')
+  it('still reads the config older versions wrote', () => {
+    const legacy = officePaths().legacyConfigFiles
+    expect(legacy.length).toBeGreaterThan(0)
+    for (const file of legacy) {
+      expect(file).toContain('dsh-office-kit')
+      expect(file).not.toBe(officePaths().configFile)
+    }
   })
 })

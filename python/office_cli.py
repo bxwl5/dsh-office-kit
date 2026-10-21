@@ -93,23 +93,86 @@ KIT_RELATIVE = Path("node_modules") / "@deepseek-ai" / "libreoffice-kit" / "lib"
 #: Actionable explanation used whenever the kit cannot be located.
 KIT_MISSING = (
     "the LibreOffice renderer is not available: the DSH LibreOffice kit was not found. "
-    "DeepSeek Harness normally injects DSH_LIBREOFFICE_KIT_CLI when it loads this plugin; "
-    "if you run the helper by hand, point that variable at <kit>/lib/cli.js of "
+    "The plugin records the path in dsh-office-kit's config.json when the harness loads it; "
+    "for a hand-run helper, set DSH_LIBREOFFICE_KIT_CLI to <kit>/lib/cli.js of "
     "@deepseek-ai/libreoffice-kit"
 )
+
+
+def office_home() -> Path:
+    """Everything this plugin owns lives under `~/.dsh/office` (mirrors src/python.ts)."""
+    return Path.home() / ".dsh" / "office"
+
+
+def config_file() -> Path:
+    """The config.json the host half and postinstall write."""
+    override = os.environ.get("DSH_OFFICE_CONFIG")
+    return Path(override).expanduser() if override else office_home() / "config.json"
+
+
+def legacy_config_files() -> list[Path]:
+    """Config files older versions wrote in the OS config directory, newest first."""
+    if sys.platform == "darwin":
+        primary = Path.home() / "Library" / "Application Support" / "dsh-office-kit" / "config.json"
+    elif sys.platform == "win32":
+        primary = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "dsh-office-kit" / "config.json"
+    else:
+        primary = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "dsh-office-kit" / "config.json"
+    roaming = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "dsh-office-kit" / "config.json"
+    return list(dict.fromkeys([primary, roaming]))
+
+
+def read_config() -> dict[str, Any]:
+    """Merged config: the canonical file wins key by key over older locations."""
+    merged: dict[str, Any] = {}
+    for file in [*reversed(legacy_config_files()), config_file()]:
+        try:
+            parsed = json.loads(file.read_text("utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(parsed, dict):
+            merged.update(parsed)
+    return merged
+
+
+def saved_kit() -> tuple[str, str] | None:
+    """Return (node, kit CLI) as recorded by the host half, or None.
+
+    This is how a profile install works: the kit lives in the harness tree, which
+    no walk-up from the plugin directory can reach, so the host half looks it up
+    while it loads and stores the result here for every later helper call.
+    """
+    kit = read_config().get("libreofficeKit")
+    if not isinstance(kit, dict):
+        return None
+    cli = kit.get("cli")
+    if not isinstance(cli, str) or not Path(cli).is_file():
+        return None
+    node = kit.get("node")
+    if not isinstance(node, str) or not node:
+        node = os.environ.get("DSH_NODE") or shutil.which("node")
+    if not node:
+        return None
+    return node, cli
 
 
 def find_kit() -> tuple[str, str] | None:
     """Return (node, kit CLI) for the bundled renderer, or None when it is absent.
 
-    DeepSeek Harness exports `DSH_LIBREOFFICE_KIT_CLI` (and `DSH_NODE`) before any
-    agent shell runs, which covers a profile install where the kit lives in the
-    harness tree. The walk-up covers a checkout or a plugin-local dependency.
+    Order: an explicit `DSH_LIBREOFFICE_KIT_CLI`, then the path the host half
+    recorded in config.json (the profile-install case), then a walk up from this
+    file, which covers a checkout or a plugin-local dependency.
     """
-    candidates: list[Path] = []
     override = os.environ.get("DSH_LIBREOFFICE_KIT_CLI")
     if override:
-        candidates.append(Path(override).expanduser())
+        cli = Path(override).expanduser()
+        if cli.is_file():
+            node = os.environ.get("DSH_NODE") or shutil.which("node")
+            return (node, str(cli)) if node else None
+    recorded = saved_kit()
+    if recorded is not None:
+        return recorded
+    candidates: list[Path] = []
     for root in (PACKAGE_ROOT, *PACKAGE_ROOT.parents):
         candidates.append(root / KIT_RELATIVE)
     cli = next((candidate for candidate in candidates if candidate.is_file()), None)
