@@ -14,13 +14,14 @@ jobs:
 
   # The reusable workflow above has no Python runtime, so the pack-script
   # integration tests skip there. This job provisions the dependencies the
-  # skills promise and runs them on both platforms.
+  # skills promise and runs them on every platform the kit supports: native
+  # engines on macOS and Windows, the WASM engine on Linux.
   integration:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     permissions: {}
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +41,7 @@ jobs:
       - run: pnpm vitest run test/office-cli.test.ts
         env:
           DSH_OFFICE_PYTHON: python
+          DSH_OFFICE_REQUIRE_RENDERER: '1'
 
   # coverage:
   #   uses: sxzz/workflows/.github/workflows/coverage.yml@main

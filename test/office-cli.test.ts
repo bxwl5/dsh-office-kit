@@ -90,6 +90,11 @@ if (python != null) {
 }
 const ready = status != null && status.packages.every(item => item.installed)
 
+// CI sets this so a platform without a working kit fails instead of quietly skipping.
+const requireRenderer = process.env.DSH_OFFICE_REQUIRE_RENDERER === '1'
+const canRenderDocx = requireRenderer || status?.renderers.can_render.docx === true
+const canRecalculate = requireRenderer || status?.renderers.can_recalculate.xlsx === true
+
 describe('feature registry', () => {
   it('exposes four stable ids and slash commands', () => {
     expect(OFFICE_FEATURES.map(feature => feature.id)).toEqual(['documents', 'pdf', 'presentations', 'spreadsheets'])
@@ -295,7 +300,18 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(existsSync(png)).toBe(true)
   })
 
-  it.runIf(status?.renderers.can_recalculate.xlsx === true)('recalculates XLSX formulas through the LibreOffice kit', () => {
+  it.runIf(requireRenderer)('loads the LibreOffice kit backend for this platform', () => {
+    const kit = status?.renderers.kit
+    expect(kit?.available).toBe(true)
+    expect(['native', 'wasm']).toContain(kit?.backend)
+    expect(status?.renderers.can_render).toEqual({ docx: true, pptx: true, xlsx: true, pdf: true })
+    expect(status?.renderers.can_recalculate).toEqual({ xlsx: true })
+    // The kit ships a native engine for macOS and Windows and falls back to WASM elsewhere.
+    if (process.platform === 'linux')
+      expect(kit?.backend).toBe('wasm')
+  }, 60_000)
+
+  it.runIf(canRecalculate)('recalculates XLSX formulas through the LibreOffice kit', () => {
     const file = create('spreadsheets', '财务 模型-计算前')
     const out = join(directory, '财务 模型-计算后.xlsx')
     const result = runCli(python!, ['xlsx', 'recalc', '--input', file, '--out', out])
@@ -307,7 +323,7 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(rows[3][1]).toBe(228)
   }, 60_000)
 
-  it.runIf(status?.renderers.can_render.docx === true)('renders DOCX pages to PNG through the LibreOffice kit', () => {
+  it.runIf(canRenderDocx)('renders DOCX pages to PNG through the LibreOffice kit', () => {
     const file = create('documents', '季度 报告-渲染')
     const out = join(directory, 'render')
     const result = runCli(python!, ['docx', 'render', '--input', file, '--out-dir', out])
@@ -323,7 +339,7 @@ describe.runIf(ready)('office CLI integration', () => {
       expect(readFileSync(join(out, page)).byteLength).toBeGreaterThan(10_000)
   }, 60_000)
 
-  it.runIf(status?.renderers.can_render.docx === true)('reports substituted fonts instead of silently producing tofu', () => {
+  it.runIf(canRenderDocx)('reports substituted fonts instead of silently producing tofu', () => {
     const file = join(directory, '缺字体.docx')
     const script = 'import sys\nfrom docx import Document\nd = Document()\nr = d.add_paragraph("fallback 缺字体").runs[0]\nr.font.name = "NoSuchFontXYZ"\nd.save(sys.argv[1])'
     execFileSync(python!, ['-c', script, file])
