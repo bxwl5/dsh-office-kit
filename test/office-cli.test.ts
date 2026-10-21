@@ -508,7 +508,7 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(String(added.part)).toMatch(/header\d*\.xml$/u)
     const render = runCli(python!, ['docx', 'render', '--input', marked, '--out-dir', join(directory, 'render-watermark'), '--pdf'])
     expect(render.ok).toBe(true)
-    expect(read('pdf', String(render.pdf)).pages.map((page: { text: string }) => page.text).join('')).toContain('CONFIDENTIAL')
+    expect(read('pdf', String(render.pdf)).pages.map((page: { text: string }) => page.text).join('').replace(/\s+/gu, '')).toContain('CONFIDENTIAL')
     const report = runScriptAudit(python!, 'office-documents', 'scripts/watermark_audit_remove.py', [marked, '--mode', 'report'])
     expect(report.status).toBe(1)
     expect(report.payload.watermarks).toHaveLength(1)
