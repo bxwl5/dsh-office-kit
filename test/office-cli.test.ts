@@ -2,20 +2,24 @@ import type { OfficeFeatureId } from '../src/features'
 import { Buffer } from 'node:buffer'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
 import { afterAll, describe, expect, it } from 'vitest'
 import { featureByCommand, featureById, OFFICE_FEATURES } from '../src/features'
-import { officePaths } from '../src/python'
+import { officePaths, venvPython } from '../src/python'
 
 const isWindows = process.platform === 'win32'
 const PACKAGE_ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/u, '$1')
 
 function configuredPython(): string | undefined {
   const candidates: (string | undefined)[] = [process.env.DSH_OFFICE_PYTHON]
-  const config = join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'dsh-office-kit', 'config.json')
-  if (existsSync(config)) {
+  // Read the same paths the host half resolves. Hardcoding the Windows-shaped
+  // config location here made every integration test skip on Linux.
+  const paths = officePaths()
+  for (const config of [paths.configFile, paths.legacyConfigFile]) {
+    if (!existsSync(config))
+      continue
     try {
       const parsed = JSON.parse(readFileSync(config, 'utf8')) as { python?: unknown }
       if (typeof parsed.python === 'string')
@@ -25,6 +29,7 @@ function configuredPython(): string | undefined {
       // Ignore a malformed config; the test falls back to the checked-in venv.
     }
   }
+  candidates.push(venvPython(paths.venv))
   candidates.push(join(PACKAGE_ROOT, '.venv-check', isWindows ? 'Scripts/python.exe' : 'bin/python'))
   candidates.push('python3', 'python')
   return candidates.find(candidate => candidate != null && (candidate.includes('/') || candidate.includes('\\') ? existsSync(candidate) : true))
@@ -211,6 +216,15 @@ describe.runIf(ready)('office CLI integration', () => {
     const result = read('pdf', file)
     expect(result.page_count).toBeGreaterThan(0)
     expect(result.pages.map((page: { text: string }) => page.text).join('')).toContain('产品说明')
+  })
+
+  it('never emits NUL text when the PDF spec contains CJK', () => {
+    // A Latin-only fallback font (DejaVuSans) registers cleanly and writes each CJK
+    // character as NUL, so a plain `ok: true` is not evidence the text survived.
+    const file = create('pdf', '编码 检查')
+    const text = read('pdf', file).pages.map((page: { text: string }) => page.text).join('')
+    expect(text).toContain('产品说明')
+    expect(text).not.toContain('\u0000')
   })
 
   it('renders a PDF title once when the spec also carries a title block', () => {

@@ -34,6 +34,7 @@ const FAILURE_RETRY_DELAY = 5 * 60 * 1000
 /** Absolute paths this plugin owns inside a user profile. */
 export interface OfficePaths {
   readonly configFile: string
+  readonly legacyConfigFile: string
   readonly venv: string
   readonly legacyVenv: string
   readonly cli: string
@@ -58,11 +59,19 @@ function legacyDataDir(): string {
       : join(process.env.XDG_DATA_HOME ?? join(home, '.local', 'share'), 'dsh-office-kit')
 }
 
+/** Config location written by versions that ignored the platform branch. */
+function legacyConfigFile(): string {
+  return process.platform === 'win32'
+    ? join(configDir(), 'config.json')
+    : join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'dsh-office-kit', 'config.json')
+}
+
 /** Resolve per-OS config/data directories and bundled resources. */
 export function officePaths(): OfficePaths {
   const runtimeDir = join(homedir(), '.dsh', 'office', 'runtime')
   return {
     configFile: join(configDir(), 'config.json'),
+    legacyConfigFile: legacyConfigFile(),
     venv: join(runtimeDir, 'venv'),
     legacyVenv: join(legacyDataDir(), 'venv'),
     cli: join(PACKAGE_ROOT, 'python', 'office_cli.py'),
@@ -222,17 +231,30 @@ interface SavedPython {
   readonly version?: unknown
 }
 
-/** Read the interpreter path postinstall recorded; malformed files are ignored. */
-function savedPython(configFile: string): string | undefined {
-  if (!isFile(configFile))
-    return undefined
-  try {
-    const parsed = JSON.parse(readFileSync(configFile, 'utf8')) as SavedPython
-    return typeof parsed.python === 'string' && parsed.python.length > 0 ? parsed.python : undefined
+/**
+ * Read the interpreter path postinstall recorded; malformed files are ignored.
+ * The legacy location is read second so an upgrade does not orphan a ready venv.
+ */
+function savedPython(configFile: string, legacyConfigFile?: string): string | undefined {
+  const files = legacyConfigFile == null ? [configFile] : [configFile, legacyConfigFile]
+  for (const file of files) {
+    if (!isFile(file))
+      continue
+    try {
+      const parsed = JSON.parse(readFileSync(file, 'utf8')) as SavedPython
+      if (typeof parsed.python === 'string' && parsed.python.length > 0)
+        return parsed.python
+    }
+    catch {
+      // Keep looking: one corrupt file must not hide a usable record.
+    }
   }
-  catch {
-    return undefined
-  }
+  return undefined
+}
+
+/** The interpreter inside a virtual environment, which differs per platform. */
+export function venvPython(venv: string): string {
+  return join(venv, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
 }
 
 /** PATH-independent candidate list, plugin-owned interpreters first. */
@@ -242,10 +264,13 @@ function candidates(configFile: string): string[] {
   const env = process.env.DSH_OFFICE_PYTHON
   if (env != null && env.length > 0)
     found.push(env)
-  const saved = savedPython(configFile)
+  const saved = savedPython(configFile, paths.legacyConfigFile)
   if (saved != null)
     found.push(saved)
-  found.push(paths.venv, paths.legacyVenv)
+  // The venv roots are directories; the probe must receive the interpreter inside
+  // them. Pushing the directory made every plugin-owned candidate fail with EACCES
+  // and silently demoted the runtime to a bare system interpreter.
+  found.push(venvPython(paths.venv), venvPython(paths.legacyVenv))
   const marker = join(PACKAGE_ROOT, '.python-path')
   if (isFile(marker)) {
     const text = readFileSync(marker, 'utf8').trim()

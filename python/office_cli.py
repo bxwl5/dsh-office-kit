@@ -570,35 +570,130 @@ def docx_read(input_path: Path) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _pdf_font() -> str:
+#: TrueType CJK candidates. ReportLab's TTFont only handles glyf outlines, so a
+#: CFF/PostScript TTC such as NotoSansCJK raises on registration; it is listed
+#: after the TrueType fonts and its failure is not treated as success.
+_PDF_CJK_CANDIDATES = [
+    r"C:\Windows\Fonts\msyh.ttc",
+    r"C:\Windows\Fonts\msyh.ttf",
+    r"C:\Windows\Fonts\simhei.ttf",
+    r"C:\Windows\Fonts\simsun.ttc",
+    "/System/Library/Fonts/PingFang.ttc",
+    "/System/Library/Fonts/STHeiti Light.ttc",
+    "/usr/share/fonts/truetype/winfonts/msyh.ttc",
+    "/usr/share/fonts/truetype/winfonts/msyhl.ttc",
+    "/usr/share/fonts/truetype/winfonts/simhei.ttf",
+    "/usr/share/fonts/truetype/winfonts/NotoSansSC-VF.ttf",
+    "/usr/share/fonts/truetype/winfonts/Deng.ttf",
+    "/usr/share/fonts/fonts-gb/GB_ST_GB18030.ttf",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    "/usr/share/fonts/truetype/arphic/uming.ttc",
+    "/usr/share/fonts/truetype/arphic/ukai.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+]
+
+#: Probes used to decide whether a registered face can actually draw CJK text.
+_CJK_PROBE_CODEPOINTS = (0x4E2D, 0x6587, 0x9A8C, 0x8BC1)  # 中文验证
+
+#: Fonts that register successfully but carry no CJK glyphs. Using one for CJK
+#: text produces blank boxes and a text layer of NUL characters, so it is only
+#: ever a last resort for purely Latin content.
+_LATIN_FALLBACK_FONTS = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+]
+
+
+def _font_draws_cjk(face) -> bool:
+    """Whether a registered reportlab face maps any probe codepoint to a glyph."""
+    glyphs = getattr(face, "charToGlyph", None)
+    if not isinstance(glyphs, dict):
+        return False
+    return all(glyphs.get(codepoint) for codepoint in _CJK_PROBE_CODEPOINTS)
+
+
+def _register_font(font_name: str, path: str) -> bool:
+    """Register one font file under ``font_name``; TTC files use their first face."""
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
 
-    candidates = [
-        r"C:\Windows\Fonts\msyh.ttc",
-        r"C:\Windows\Fonts\msyh.ttf",
-        r"C:\Windows\Fonts\simsun.ttc",
-        "/System/Library/Fonts/PingFang.ttc",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
-        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-        "/usr/share/fonts/truetype/arphic/uming.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for candidate in candidates:
-        if Path(candidate).is_file():
-            try:
-                pdfmetrics.registerFont(TTFont("OfficeCJK", candidate))
-                return "OfficeCJK"
-            except Exception:
-                continue
+    attempts = [{"subfontIndex": 0}, {}] if path.lower().endswith(".ttc") else [{}]
+    for extra in attempts:
+        try:
+            pdfmetrics.registerFont(TTFont(font_name, path, **extra))
+            return True
+        except Exception:
+            continue
+    return False
+
+
+class PdfFontError(RuntimeError):
+    """Raised when the content needs glyphs no available font can draw."""
+
+
+def _pdf_font(required_text: str = "") -> str:
+    """Pick a font that can actually draw ``required_text``.
+
+    Registration success alone is not enough: DejaVuSans registers cleanly and
+    still renders every CJK character as an empty box, so each candidate is
+    probed for real glyph coverage before it is accepted. When the content needs
+    CJK and no font supplies it, this fails instead of emitting NUL text.
+    """
+    from reportlab.pdfbase import pdfmetrics
+
+    needs_cjk = any(ord(character) > 0x2E7F for character in required_text)
+    for candidate in _PDF_CJK_CANDIDATES:
+        if not Path(candidate).is_file():
+            continue
+        if not _register_font("OfficeCJK", candidate):
+            continue
+        if not needs_cjk or _font_draws_cjk(pdfmetrics.getFont("OfficeCJK").face):
+            return "OfficeCJK"
     try:
         from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 
         pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
         return "STSong-Light"
     except Exception:
-        return "Helvetica"
+        pass
+    if needs_cjk:
+        raise PdfFontError(
+            "no font with CJK glyphs is available: the content contains CJK text but every "
+            "candidate font is missing or has no CJK coverage (ReportLab cannot load CFF/PostScript "
+            "outlines such as NotoSansCJK-Regular.ttc). Install a TrueType CJK font, for example "
+            "fonts-wqy-zenhei or fonts-noto-cjk, and retry."
+        )
+    for candidate in _LATIN_FALLBACK_FONTS:
+        if Path(candidate).is_file() and _register_font("OfficeLatin", candidate):
+            return "OfficeLatin"
+    return "Helvetica"
+
+
+def _pdf_blocks_text(blocks: Iterable[dict[str, Any]]) -> str:
+    """Collect the literal text of PDF blocks so font choice can match the content."""
+    parts: list[str] = []
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            for key in ("text", "title", "subtitle"):
+                if isinstance(value.get(key), str):
+                    parts.append(value[key])
+            for key in ("headers", "items"):
+                for item in value.get(key, []) or []:
+                    if isinstance(item, str):
+                        parts.append(item)
+            for row in value.get("rows", []) or []:
+                for cell in row if isinstance(row, (list, tuple)) else [row]:
+                    if isinstance(cell, str):
+                        parts.append(cell)
+            for key in ("blocks", "pages"):
+                visit(value.get(key, []))
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                visit(item)
+
+    visit(list(blocks))
+    return "".join(parts)
 
 
 def _pdf_flowables(blocks: Iterable[dict[str, Any]], font: str, counters: dict[str, int]):
@@ -666,19 +761,8 @@ def pdf_create(spec: dict[str, Any], out: Path) -> dict[str, Any]:
     from reportlab.lib.units import inch
     from reportlab.platypus import SimpleDocTemplate
 
-    font = _pdf_font()
     size = A4 if str(spec.get("page_size", "Letter")).lower() == "a4" else letter
     ensure_parent(str(out))
-    document = SimpleDocTemplate(
-        str(out),
-        pagesize=size,
-        leftMargin=0.85 * inch,
-        rightMargin=0.85 * inch,
-        topMargin=0.8 * inch,
-        bottomMargin=0.8 * inch,
-        title=str(spec.get("title", "")),
-        author=str(spec.get("author", "")),
-    )
     counters = {key: 0 for key in ("headings", "paragraphs", "list_items", "tables", "images")}
     following: list[dict[str, Any]] = []
     for page in spec.get("pages", []):
@@ -695,6 +779,19 @@ def pdf_create(spec: dict[str, Any], out: Path) -> dict[str, Any]:
     if spec.get("subtitle"):
         blocks.append({"type": "paragraph", "text": spec["subtitle"]})
     blocks.extend(following)
+    # Choose the font against the text that will actually be drawn, so CJK content
+    # can never silently fall back to a Latin-only face.
+    font = _pdf_font(_pdf_blocks_text(blocks))
+    document = SimpleDocTemplate(
+        str(out),
+        pagesize=size,
+        leftMargin=0.85 * inch,
+        rightMargin=0.85 * inch,
+        topMargin=0.8 * inch,
+        bottomMargin=0.8 * inch,
+        title=str(spec.get("title", "")),
+        author=str(spec.get("author", "")),
+    )
     document.build(_pdf_flowables(blocks, font, counters))
     return {"ok": True, "kind": "pdf", "command": "create", "output": str(out), "font": font, "counts": counters}
 

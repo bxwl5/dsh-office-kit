@@ -105,11 +105,16 @@ function legacyDataDir() {
 	const home = homedir();
 	return process.platform === "win32" ? join(process.env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "dsh-office-kit") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-kit") : join(process.env.XDG_DATA_HOME ?? join(home, ".local", "share"), "dsh-office-kit");
 }
+/** Config location written by versions that ignored the platform branch. */
+function legacyConfigFile() {
+	return process.platform === "win32" ? join(configDir(), "config.json") : join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "dsh-office-kit", "config.json");
+}
 /** Resolve per-OS config/data directories and bundled resources. */
 function officePaths() {
 	const runtimeDir = join(homedir(), ".dsh", "office", "runtime");
 	return {
 		configFile: join(configDir(), "config.json"),
+		legacyConfigFile: legacyConfigFile(),
 		venv: join(runtimeDir, "venv"),
 		legacyVenv: join(legacyDataDir(), "venv"),
 		cli: join(PACKAGE_ROOT$1, "python", "office_cli.py"),
@@ -209,15 +214,23 @@ function failedInspection(path, error) {
 		error: error instanceof Error ? error.message : String(error)
 	};
 }
-/** Read the interpreter path postinstall recorded; malformed files are ignored. */
-function savedPython(configFile) {
-	if (!isFile(configFile)) return void 0;
-	try {
-		const parsed = JSON.parse(readFileSync(configFile, "utf8"));
-		return typeof parsed.python === "string" && parsed.python.length > 0 ? parsed.python : void 0;
-	} catch {
-		return;
+/**
+* Read the interpreter path postinstall recorded; malformed files are ignored.
+* The legacy location is read second so an upgrade does not orphan a ready venv.
+*/
+function savedPython(configFile, legacyConfigFile) {
+	const files = legacyConfigFile == null ? [configFile] : [configFile, legacyConfigFile];
+	for (const file of files) {
+		if (!isFile(file)) continue;
+		try {
+			const parsed = JSON.parse(readFileSync(file, "utf8"));
+			if (typeof parsed.python === "string" && parsed.python.length > 0) return parsed.python;
+		} catch {}
 	}
+}
+/** The interpreter inside a virtual environment, which differs per platform. */
+function venvPython(venv) {
+	return join(venv, process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
 }
 /** PATH-independent candidate list, plugin-owned interpreters first. */
 function candidates(configFile) {
@@ -225,9 +238,9 @@ function candidates(configFile) {
 	const found = [];
 	const env = process.env.DSH_OFFICE_PYTHON;
 	if (env != null && env.length > 0) found.push(env);
-	const saved = savedPython(configFile);
+	const saved = savedPython(configFile, paths.legacyConfigFile);
 	if (saved != null) found.push(saved);
-	found.push(paths.venv, paths.legacyVenv);
+	found.push(venvPython(paths.venv), venvPython(paths.legacyVenv));
 	const marker = join(PACKAGE_ROOT$1, ".python-path");
 	if (isFile(marker)) {
 		const text = readFileSync(marker, "utf8").trim();

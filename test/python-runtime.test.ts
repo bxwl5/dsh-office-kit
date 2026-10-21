@@ -1,11 +1,14 @@
 import type { PythonInspection, RuntimeStatus } from '../src/python'
 import { homedir } from 'node:os'
+import { join } from 'node:path'
+import process from 'node:process'
 import { describe, expect, it } from 'vitest'
 import {
   officePaths,
   runtimeAlive,
   runtimeRemedy,
   selectRuntime,
+  venvPython,
 } from '../src/python'
 
 function inspection(overrides: Partial<PythonInspection> = {}): PythonInspection {
@@ -99,5 +102,17 @@ describe('paths and remedy', () => {
 
   it('gives the user a runnable node remedy with a quoted absolute path', () => {
     expect(runtimeRemedy()).toMatch(/^node "[^"]+postinstall\.mjs"$/u)
+  })
+
+  it('resolves the interpreter inside a venv, not the venv directory', () => {
+    // Probing the directory fails with EACCES and silently demotes the runtime to a
+    // bare system interpreter, so the candidate must name the executable.
+    const paths = officePaths()
+    const python = venvPython(paths.venv)
+    expect(python).not.toBe(paths.venv)
+    expect(python.startsWith(paths.venv)).toBe(true)
+    // Build the expectation with join: on Windows the separator is a backslash, so a
+    // literal 'Scripts/python.exe' never matches the joined path.
+    expect(python.endsWith(join('Scripts', 'python.exe')) || python.endsWith(join('bin', 'python'))).toBe(true)
   })
 })
