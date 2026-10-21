@@ -1,12 +1,13 @@
+import { createRequire } from "node:module";
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { BUNDLED_SKILL_RANK } from "@deepseek-ai/dsh-skill";
 import { defineTool } from "@deepseek-ai/dsh-tools";
+import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 //#region src/features.ts
 /** The four entries, in menu order. */
@@ -48,6 +49,33 @@ const OFFICE_FEATURES = [
 		extensions: [".xlsx"]
 	}
 ];
+//#endregion
+//#region src/kit.ts
+/** Package root of the installed plugin (dist/ during a build, src/ in a checkout). */
+const PACKAGE_ROOT$1 = fileURLToPath(new URL("..", import.meta.url));
+const KIT_CLI = "@deepseek-ai/libreoffice-kit/cli";
+/**
+* Locate the LibreOffice kit CLI that DeepSeek Harness ships.
+*
+* DSH installs third-party plugins into a profile (`~/.dsh/profiles/<name>/node_modules`)
+* while the kit lives in the harness dependency tree, so resolving relative to this
+* package cannot find it. Resolving from the harness entry point (`process.argv[1]`,
+* e.g. `<dsh>/node_modules/@deepseek-ai/dsh/lib/bin.js`) walks the tree the harness
+* itself loaded from, and resolving from this package covers a checkout or a
+* plugin-local install. `DSH_LIBREOFFICE_KIT_CLI` overrides both.
+*/
+function resolveKitCli(entry = process.argv[1]) {
+	const override = process.env.DSH_LIBREOFFICE_KIT_CLI;
+	if (override != null && existsSync(override)) return override;
+	for (const anchor of [entry, join(PACKAGE_ROOT$1, "package.json")]) {
+		if (anchor == null) continue;
+		try {
+			const cli = createRequire(anchor).resolve(KIT_CLI);
+			if (existsSync(cli)) return cli;
+		} catch {}
+	}
+	return null;
+}
 /** Python packages the helper CLI needs. */
 const PYTHON_PACKAGES = [
 	{
@@ -91,8 +119,8 @@ const PYTHON_PACKAGES = [
 		package: "mathml2omml"
 	}
 ];
-const PACKAGE_ROOT$1 = fileURLToPath(new URL("..", import.meta.url));
-const POSTINSTALL_SCRIPT = join(PACKAGE_ROOT$1, "postinstall.mjs");
+const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
+const POSTINSTALL_SCRIPT = join(PACKAGE_ROOT, "postinstall.mjs");
 /** Upper bound for one self-heal run; the remedy command remains available afterwards. */
 const POSTINSTALL_TIMEOUT = 540 * 1e3;
 /** Failed probes are retried after this delay instead of re-running pip on every status call. */
@@ -117,8 +145,8 @@ function officePaths() {
 		legacyConfigFile: legacyConfigFile(),
 		venv: join(runtimeDir, "venv"),
 		legacyVenv: join(legacyDataDir(), "venv"),
-		cli: join(PACKAGE_ROOT$1, "python", "office_cli.py"),
-		skillsDir: join(PACKAGE_ROOT$1, "assets", "skills")
+		cli: join(PACKAGE_ROOT, "python", "office_cli.py"),
+		skillsDir: join(PACKAGE_ROOT, "assets", "skills")
 	};
 }
 /** One-liner the user can run to repair the runtime without pnpm. */
@@ -241,7 +269,7 @@ function candidates(configFile) {
 	const saved = savedPython(configFile, paths.legacyConfigFile);
 	if (saved != null) found.push(saved);
 	found.push(venvPython(paths.venv), venvPython(paths.legacyVenv));
-	const marker = join(PACKAGE_ROOT$1, ".python-path");
+	const marker = join(PACKAGE_ROOT, ".python-path");
 	if (isFile(marker)) {
 		const text = readFileSync(marker, "utf8").trim();
 		if (text.length > 0) found.push(text);
@@ -405,24 +433,10 @@ function parseSkill(raw, path) {
 		content: raw.slice(match[0].length).trim()
 	};
 }
-const KIT_MISSING = "the DSH LibreOffice kit (@deepseek-ai/libreoffice-kit) was not found: install this plugin inside the harness tree, or point DSH_LIBREOFFICE_KIT_CLI at <kit>/lib/cli.js";
-const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
+const KIT_MISSING = "the DSH LibreOffice kit (@deepseek-ai/libreoffice-kit) was not found: DeepSeek Harness normally injects DSH_LIBREOFFICE_KIT_CLI, so point that variable at <kit>/lib/cli.js if this plugin runs outside the harness";
 const runKit = promisify(execFile);
-/** Locate the kit the same way python/office_cli.py does, so both halves agree. */
-function findKitCli() {
-	const override = process.env.DSH_LIBREOFFICE_KIT_CLI;
-	if (override != null && existsSync(override)) return override;
-	let directory = PACKAGE_ROOT;
-	for (;;) {
-		const candidate = join(directory, "node_modules", "@deepseek-ai", "libreoffice-kit", "lib", "cli.js");
-		if (existsSync(candidate)) return candidate;
-		const parent = dirname(directory);
-		if (parent === directory) return null;
-		directory = parent;
-	}
-}
 async function kitFacts() {
-	const cli = findKitCli();
+	const cli = resolveKitCli();
 	if (cli == null) return {
 		available: false,
 		node: null,
@@ -462,7 +476,7 @@ async function kitFacts() {
 }
 function pluginVersion() {
 	try {
-		const parsed = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8"));
+		const parsed = JSON.parse(readFileSync(join(PACKAGE_ROOT$1, "package.json"), "utf8"));
 		return typeof parsed.version === "string" ? parsed.version : "unknown";
 	} catch {
 		return "unknown";
@@ -480,6 +494,11 @@ function runtimeReason(runtime) {
 function apply(ctx) {
 	const paths = officePaths();
 	const candidates = [];
+	const kitCli = resolveKitCli();
+	if (kitCli != null) {
+		process.env.DSH_LIBREOFFICE_KIT_CLI ??= kitCli;
+		process.env.DSH_NODE ??= process.execPath;
+	}
 	for (const feature of OFFICE_FEATURES) {
 		const directory = join(paths.skillsDir, feature.skill);
 		const path = join(directory, "SKILL.md");

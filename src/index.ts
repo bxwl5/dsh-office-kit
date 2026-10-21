@@ -6,11 +6,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { BUNDLED_SKILL_RANK } from '@deepseek-ai/dsh-skill'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { OFFICE_FEATURES } from './features'
+import { PACKAGE_ROOT, resolveKitCli } from './kit'
 import { cliExists, ensureRuntime, officePaths } from './python'
 
 /** Services required by this host half. */
@@ -50,31 +50,12 @@ interface KitFacts {
 }
 
 const KIT_MISSING
-  = 'the DSH LibreOffice kit (@deepseek-ai/libreoffice-kit) was not found: install this plugin inside the harness tree, or point DSH_LIBREOFFICE_KIT_CLI at <kit>/lib/cli.js'
-
-const PACKAGE_ROOT = fileURLToPath(new URL('..', import.meta.url))
+  = 'the DSH LibreOffice kit (@deepseek-ai/libreoffice-kit) was not found: DeepSeek Harness normally injects DSH_LIBREOFFICE_KIT_CLI, so point that variable at <kit>/lib/cli.js if this plugin runs outside the harness'
 
 const runKit = promisify(execFile)
 
-/** Locate the kit the same way python/office_cli.py does, so both halves agree. */
-function findKitCli(): string | null {
-  const override = process.env.DSH_LIBREOFFICE_KIT_CLI
-  if (override != null && existsSync(override))
-    return override
-  let directory = PACKAGE_ROOT
-  for (;;) {
-    const candidate = join(directory, 'node_modules', '@deepseek-ai', 'libreoffice-kit', 'lib', 'cli.js')
-    if (existsSync(candidate))
-      return candidate
-    const parent = dirname(directory)
-    if (parent === directory)
-      return null
-    directory = parent
-  }
-}
-
 async function kitFacts(): Promise<KitFacts> {
-  const cli = findKitCli()
+  const cli = resolveKitCli()
   if (cli == null)
     return { available: false, node: null, cli: null, version: null, backend: null, remedy: KIT_MISSING }
   const node = process.env.DSH_NODE ?? process.execPath
@@ -124,6 +105,14 @@ function runtimeReason(runtime: RuntimeStatus): string {
 export function apply(ctx: Context): void {
   const paths = officePaths()
   const candidates: SkillCandidate[] = []
+
+  // Shells and helper processes spawned by the agent inherit this process environment,
+  // which is how python/office_cli.py and the skill scripts find the harness renderer.
+  const kitCli = resolveKitCli()
+  if (kitCli != null) {
+    process.env.DSH_LIBREOFFICE_KIT_CLI ??= kitCli
+    process.env.DSH_NODE ??= process.execPath
+  }
 
   for (const feature of OFFICE_FEATURES) {
     const directory = join(paths.skillsDir, feature.skill)

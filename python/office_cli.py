@@ -93,17 +93,18 @@ KIT_RELATIVE = Path("node_modules") / "@deepseek-ai" / "libreoffice-kit" / "lib"
 #: Actionable explanation used whenever the kit cannot be located.
 KIT_MISSING = (
     "the LibreOffice renderer is not available: the DSH LibreOffice kit was not found. "
-    "It ships with DeepSeek Harness as @deepseek-ai/libreoffice-kit; install the plugin "
-    "inside the harness tree, or point DSH_LIBREOFFICE_KIT_CLI at <kit>/lib/cli.js"
+    "DeepSeek Harness normally injects DSH_LIBREOFFICE_KIT_CLI when it loads this plugin; "
+    "if you run the helper by hand, point that variable at <kit>/lib/cli.js of "
+    "@deepseek-ai/libreoffice-kit"
 )
 
 
 def find_kit() -> tuple[str, str] | None:
     """Return (node, kit CLI) for the bundled renderer, or None when it is absent.
 
-    Resolution walks up from this file, which covers both layouts that matter:
-    a plugin-local dependency (`<plugin>/node_modules/...`) and the harness
-    install (`<dsh>/node_modules/dsh-office-kit/../../@deepseek-ai/...`).
+    DeepSeek Harness exports `DSH_LIBREOFFICE_KIT_CLI` (and `DSH_NODE`) before any
+    agent shell runs, which covers a profile install where the kit lives in the
+    harness tree. The walk-up covers a checkout or a plugin-local dependency.
     """
     candidates: list[Path] = []
     override = os.environ.get("DSH_LIBREOFFICE_KIT_CLI")

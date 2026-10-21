@@ -150,9 +150,9 @@ Guidance: [authoring workflow](references/authoring-workflow.md) ·
 ## Genuine gaps
 
 - The DSH LibreOffice kit missing (`renderers.can_render.pptx: false`) → no true
-  render; use `--engine draft` and say the check was geometric. Installing the
-  plugin inside the harness tree (or setting `DSH_LIBREOFFICE_KIT_CLI`) fixes it;
-  a standalone Office/LibreOffice install does not.
+  render; use `--engine draft` and say the check was geometric. A harness install
+  that ships the kit fixes it (the plugin injects `DSH_LIBREOFFICE_KIT_CLI` when it
+  loads); a standalone Office/LibreOffice install does not.
 - Fonts the user's machine lacks are substituted by any renderer; the pack
   cannot install fonts.
 - Google Slides import fidelity is out of our control; see
