@@ -196,6 +196,7 @@ export function apply(ctx: Context): void {
               ...(runtime.python.error == null ? {} : { error: runtime.python.error }),
             },
         cli: { path: paths.cli, exists: cliExists() },
+        config: { path: paths.configFile, exists: existsSync(paths.configFile) },
         packages: runtime.packages,
         renderers: await kitFacts(),
         skills: candidates.map(candidate => candidate.name),

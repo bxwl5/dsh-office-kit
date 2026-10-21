@@ -35,21 +35,22 @@ const LEGACY_DATA_DIR = IS_WINDOWS
     : join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'dsh-office-kit')
 export const LEGACY_VENV_DIR = join(LEGACY_DATA_DIR, 'venv')
 const LEGACY_VENV_PYTHON = join(LEGACY_VENV_DIR, IS_WINDOWS ? 'Scripts/python.exe' : 'bin/python')
-// Must mirror `configDir()` in src/python.ts: the host half reads this file on
-// every runtime probe, so a platform mismatch here makes a ready venv look missing.
-export const CONFIG_DIR = IS_WINDOWS
-  ? join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), 'dsh-office-kit')
-  : process.platform === 'darwin'
-    ? join(homedir(), 'Library', 'Application Support', 'dsh-office-kit')
-    : join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'dsh-office-kit')
+// Must mirror `officePaths()` in src/python.ts: the host half reads this file on
+// every runtime probe, so a mismatch here makes a ready venv look missing.
+export const CONFIG_DIR = join(homedir(), '.dsh', 'office')
 export const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
 /**
- * Legacy config location written by versions without the platform branch.
- * Read as a fallback so an existing runtime is not rebuilt on upgrade.
+ * Config files older versions wrote in the OS config directory. Read as
+ * fallbacks so an upgraded install is not rebuilt or mis-reported.
  */
-const LEGACY_CONFIG_FILE = IS_WINDOWS
-  ? CONFIG_FILE
-  : join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), 'dsh-office-kit', 'config.json')
+const LEGACY_CONFIG_FILES = [...new Set([
+  IS_WINDOWS
+    ? join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), 'dsh-office-kit', 'config.json')
+    : process.platform === 'darwin'
+      ? join(homedir(), 'Library', 'Application Support', 'dsh-office-kit', 'config.json')
+      : join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'dsh-office-kit', 'config.json'),
+  join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), 'dsh-office-kit', 'config.json'),
+])]
 const REQUIREMENTS = join(PACKAGE_ROOT, 'python', 'requirements.txt')
 const LOG_PREFIX = '[dsh-office-kit]'
 
@@ -314,18 +315,20 @@ function verifyImports(python) {
 }
 
 function readConfig() {
-  for (const file of [CONFIG_FILE, LEGACY_CONFIG_FILE]) {
+  // Oldest first so the canonical file and the newest legacy record win key by key.
+  const merged = {}
+  for (const file of [...LEGACY_CONFIG_FILES].reverse().concat(CONFIG_FILE)) {
     if (!existsSync(file)) {
       continue
     }
     try {
-      return JSON.parse(readFileSync(file, 'utf8'))
+      Object.assign(merged, JSON.parse(readFileSync(file, 'utf8')))
     }
     catch {
-      // A malformed file must not hide a usable legacy one.
+      // A malformed file must not hide a usable one.
     }
   }
-  return {}
+  return merged
 }
 
 function writeConfig(config) {
@@ -344,6 +347,14 @@ function writeReadyConfig(existingConfig, python, basePython, report) {
     updatedAt: new Date().toISOString(),
     imports: report,
   })
+  // The canonical file now holds everything the legacy files had; a pre-0.5 file
+  // that stays behind only makes "where is the config" ambiguous.
+  for (const file of LEGACY_CONFIG_FILES) {
+    try {
+      rmSync(file, { force: true })
+    }
+    catch {}
+  }
 }
 
 function main() {

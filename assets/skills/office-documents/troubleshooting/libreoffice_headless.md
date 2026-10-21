@@ -15,7 +15,7 @@ Rendering goes through the LibreOffice kit that DeepSeek Harness ships (`@deepse
 The plugin records the kit's location when the harness loads it, and the helper reads that record before anything else:
 
 1. `DSH_LIBREOFFICE_KIT_CLI` — an explicit override, also handy for a hand-run helper.
-2. `libreofficeKit` in dsh-office-kit's `config.json` (`%APPDATA%\dsh-office-kit\config.json`, or `$XDG_CONFIG_HOME/dsh-office-kit/config.json`). The host half writes this at load, resolving the kit from the harness entry point (`process.argv[1]`, e.g. `<dsh>/node_modules/@deepseek-ai/dsh/lib/bin.js`). This is what makes a profile install work, where the kit lives in the harness tree and not next to the plugin.
+2. `libreofficeKit` in `~/.dsh/office/config.json`. The host half writes this at load, resolving the kit from the harness entry point (`process.argv[1]`, e.g. `<dsh>/node_modules/@deepseek-ai/dsh/lib/bin.js`). This is what makes a profile install work, where the kit lives in the harness tree and not next to the plugin. Configs that pre-0.5 versions wrote in the OS config directory are still read as fallbacks.
 3. Walking up from the plugin directory through `node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js` — covers a checkout or a plugin-local dependency.
 
 `DSH_OFFICE_CONFIG` points the helper at a different config file; `DSH_NODE` overrides the node binary if `node` is not on `PATH`.

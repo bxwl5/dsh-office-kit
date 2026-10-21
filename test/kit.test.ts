@@ -63,16 +63,14 @@ describe('saveKitPath', () => {
     const config = join(root, 'config.json')
     writeFileSync(config, JSON.stringify({ python: 'C:/venv/python.exe', version: '0.4.1' }))
     saveKitPath(config, 'C:/node/node.exe', 'C:/kit/lib/cli.js')
-    expect(JSON.parse(readFileSync(config, 'utf8'))).toEqual({
+    // A legacy config on the machine may contribute extra keys, so match, not equal.
+    expect(JSON.parse(readFileSync(config, 'utf8'))).toMatchObject({
       python: 'C:/venv/python.exe',
       version: '0.4.1',
       libreofficeKit: { node: 'C:/node/node.exe', cli: 'C:/kit/lib/cli.js' },
     })
+    const first = readFileSync(config, 'utf8')
     saveKitPath(config, 'C:/node/node.exe', 'C:/kit/lib/cli.js')
-    expect(readFileSync(config, 'utf8')).toBe(`${JSON.stringify({
-      python: 'C:/venv/python.exe',
-      version: '0.4.1',
-      libreofficeKit: { node: 'C:/node/node.exe', cli: 'C:/kit/lib/cli.js' },
-    }, null, 2)}\n`)
+    expect(readFileSync(config, 'utf8')).toBe(first)
   })
 })

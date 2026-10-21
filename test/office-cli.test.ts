@@ -10,7 +10,6 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { featureByCommand, featureById, OFFICE_FEATURES } from '../src/features'
 import { officePaths, venvPython } from '../src/python'
 
-const isWindows = process.platform === 'win32'
 const PACKAGE_ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/u, '$1')
 
 function configuredPython(): string | undefined {
@@ -18,7 +17,7 @@ function configuredPython(): string | undefined {
   // Read the same paths the host half resolves. Hardcoding the Windows-shaped
   // config location here made every integration test skip on Linux.
   const paths = officePaths()
-  for (const config of [paths.configFile, paths.legacyConfigFile]) {
+  for (const config of [paths.configFile, ...paths.legacyConfigFiles]) {
     if (!existsSync(config))
       continue
     try {
@@ -31,7 +30,6 @@ function configuredPython(): string | undefined {
     }
   }
   candidates.push(venvPython(paths.venv))
-  candidates.push(join(PACKAGE_ROOT, '.venv-check', isWindows ? 'Scripts/python.exe' : 'bin/python'))
   candidates.push('python3', 'python')
   return candidates.find(candidate => candidate != null && (candidate.includes('/') || candidate.includes('\\') ? existsSync(candidate) : true))
 }
@@ -300,6 +298,30 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(existsSync(png)).toBe(true)
   })
 
+  it('reports the live-control skill as unusable instead of crashing', () => {
+    // Excel/WPS live control is Windows COM territory; every other platform, and a
+    // Windows box with nothing open, must fail with one JSON object, not a traceback.
+    const script = join(PACKAGE_ROOT, 'assets', 'skills', 'excel-live-control', 'container_tools', 'live_excel.py')
+    let exitCode = 0
+    let stdout = ''
+    try {
+      stdout = execFileSync(python!, [script, 'info'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    }
+    catch (error) {
+      const failure = error as { status?: number, stdout?: string }
+      exitCode = failure.status ?? 0
+      stdout = String(failure.stdout ?? '')
+    }
+    const payload = JSON.parse(stdout)
+    expect(payload.ok).toBe(false)
+    expect(payload.stage).toBe(process.platform === 'win32' ? 'attach' : 'powershell')
+    expect(exitCode).toBe(process.platform === 'win32' ? 1 : 3)
+    if (process.platform === 'win32')
+      expect(String(payload.remediation)).toMatch(/Excel|WPS/u)
+    else
+      expect(String(payload.error)).toMatch(/Windows PowerShell 5\.1/u)
+  }, 60_000)
+
   it.runIf(ready)('refreshes a stale interpreter record after the venv moves', async () => {
     const config = join(directory, 'stale-config.json')
     writeFileSync(config, JSON.stringify({
@@ -412,12 +434,20 @@ describe.runIf(ready)('kit discovery handoff', () => {
     const config = join(root, 'config.json')
     writeFileSync(config, JSON.stringify({ python: 'untouched', libreofficeKit: { node: process.execPath, cli: kitCli } }))
     const helper = join(root, 'python', 'office_cli.py')
-    const env: NodeJS.ProcessEnv = { ...process.env, DSH_OFFICE_CONFIG: config }
-    delete env.DSH_LIBREOFFICE_KIT_CLI
-    const report = JSON.parse(execFileSync(python!, [helper, 'status'], { encoding: 'utf8', env }))
+    // Isolate the legacy config locations too: this machine may still have one, and
+    // the helper reads those as fallbacks by design.
+    const isolated: NodeJS.ProcessEnv = {
+      ...process.env,
+      DSH_OFFICE_CONFIG: config,
+      APPDATA: join(root, 'appdata'),
+      XDG_CONFIG_HOME: join(root, 'xdg'),
+      HOME: join(root, 'home'),
+    }
+    delete isolated.DSH_LIBREOFFICE_KIT_CLI
+    const report = JSON.parse(execFileSync(python!, [helper, 'status'], { encoding: 'utf8', env: isolated }))
     expect(report.renderers.kit.available).toBe(true)
     expect(report.renderers.kit.cli).toBe(kitCli)
-    const without = JSON.parse(execFileSync(python!, [helper, 'status'], { encoding: 'utf8', env: { ...env, DSH_OFFICE_CONFIG: join(root, 'missing.json') } }))
+    const without = JSON.parse(execFileSync(python!, [helper, 'status'], { encoding: 'utf8', env: { ...isolated, DSH_OFFICE_CONFIG: join(root, 'missing.json') } }))
     expect(without.renderers.kit.available).toBe(false)
   }, 60_000)
 })

@@ -125,24 +125,31 @@ const POSTINSTALL_SCRIPT = join(PACKAGE_ROOT, "postinstall.mjs");
 const POSTINSTALL_TIMEOUT = 540 * 1e3;
 /** Failed probes are retried after this delay instead of re-running pip on every status call. */
 const FAILURE_RETRY_DELAY = 300 * 1e3;
-function configDir() {
-	const home = homedir();
-	return process.platform === "win32" ? join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "dsh-office-kit") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-kit") : join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), "dsh-office-kit");
+/** Where every version of this plugin keeps its runtime, next to DSH's own data. */
+function officeHome() {
+	return join(homedir(), ".dsh", "office");
 }
 function legacyDataDir() {
 	const home = homedir();
 	return process.platform === "win32" ? join(process.env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "dsh-office-kit") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-kit") : join(process.env.XDG_DATA_HOME ?? join(home, ".local", "share"), "dsh-office-kit");
 }
-/** Config location written by versions that ignored the platform branch. */
-function legacyConfigFile() {
-	return process.platform === "win32" ? join(configDir(), "config.json") : join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "dsh-office-kit", "config.json");
+/**
+* Config files older versions wrote, newest first.
+*
+* The pre-0.5 config stayed in the OS config directory (`%APPDATA%\dsh-office-kit`,
+* `$XDG_CONFIG_HOME/dsh-office-kit`, `~/Library/Application Support/dsh-office-kit`).
+* Reading them keeps an upgraded install from rebuilding or mis-reporting its venv.
+*/
+function legacyConfigFiles() {
+	const home = homedir();
+	return [.../* @__PURE__ */ new Set([process.platform === "win32" ? join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "dsh-office-kit", "config.json") : process.platform === "darwin" ? join(home, "Library", "Application Support", "dsh-office-kit", "config.json") : join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), "dsh-office-kit", "config.json"), join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "dsh-office-kit", "config.json")])];
 }
 /** Resolve per-OS config/data directories and bundled resources. */
 function officePaths() {
-	const runtimeDir = join(homedir(), ".dsh", "office", "runtime");
+	const runtimeDir = join(officeHome(), "runtime");
 	return {
-		configFile: join(configDir(), "config.json"),
-		legacyConfigFile: legacyConfigFile(),
+		configFile: join(officeHome(), "config.json"),
+		legacyConfigFiles: legacyConfigFiles(),
 		venv: join(runtimeDir, "venv"),
 		legacyVenv: join(legacyDataDir(), "venv"),
 		cli: join(PACKAGE_ROOT, "python", "office_cli.py"),
@@ -244,10 +251,11 @@ function failedInspection(path, error) {
 }
 /**
 * Read the interpreter path postinstall recorded; malformed files are ignored.
-* The legacy location is read second so an upgrade does not orphan a ready venv.
+* The legacy locations are read after the canonical one so an upgrade does not
+* orphan a ready venv.
 */
-function savedPython(configFile, legacyConfigFile) {
-	const files = legacyConfigFile == null ? [configFile] : [configFile, legacyConfigFile];
+function savedPython(configFile, legacyConfigFiles = []) {
+	const files = [configFile, ...legacyConfigFiles];
 	for (const file of files) {
 		if (!isFile(file)) continue;
 		try {
@@ -257,12 +265,24 @@ function savedPython(configFile, legacyConfigFile) {
 	}
 }
 /**
-* Record the renderer the harness loaded so every later helper call finds it.
+* Read the plugin config, falling back to files older versions wrote.
 *
-* A profile install keeps the plugin in `~/.dsh/profiles/<name>/node_modules`
-* and the kit in the harness tree, so no walk-up from the plugin can reach it.
-* The helper reads this record first; a read-only config must not stop loading.
+* The canonical file wins key by key, so a legacy record contributes only what
+* the new file has not written yet (an upgrade usually still needs its venv).
 */
+function loadConfig(configFile) {
+	const legacy = officePaths().legacyConfigFiles;
+	const merged = {};
+	for (const file of [...legacy].reverse()) try {
+		const parsed = JSON.parse(readFileSync(file, "utf8"));
+		if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) Object.assign(merged, parsed);
+	} catch {}
+	try {
+		const parsed = JSON.parse(readFileSync(configFile, "utf8"));
+		if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) Object.assign(merged, parsed);
+	} catch {}
+	return merged;
+}
 /**
 * Merge one key into the plugin's config without disturbing the rest.
 *
@@ -270,12 +290,8 @@ function savedPython(configFile, legacyConfigFile) {
 * the record is refreshed whenever the host resolves something different.
 */
 function saveRecord(configFile, key, value) {
-	let config = {};
-	try {
-		const parsed = JSON.parse(readFileSync(configFile, "utf8"));
-		if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) config = parsed;
-	} catch {}
-	if (JSON.stringify(config[key]) === JSON.stringify(value)) return;
+	const config = loadConfig(configFile);
+	if (JSON.stringify(config[key]) === JSON.stringify(value) && isFile(configFile)) return;
 	const temporary = `${configFile}.${process.pid}.tmp`;
 	try {
 		mkdirSync(dirname(configFile), { recursive: true });
@@ -314,14 +330,9 @@ function candidates(configFile) {
 	const env = process.env.DSH_OFFICE_PYTHON;
 	if (env != null && env.length > 0) found.push(env);
 	found.push(venvPython(paths.venv));
-	const saved = savedPython(configFile, paths.legacyConfigFile);
+	const saved = savedPython(configFile, paths.legacyConfigFiles);
 	if (saved != null) found.push(saved);
 	found.push(venvPython(paths.legacyVenv));
-	const marker = join(PACKAGE_ROOT, ".python-path");
-	if (isFile(marker)) {
-		const text = readFileSync(marker, "utf8").trim();
-		if (text.length > 0) found.push(text);
-	}
 	for (const name of ["python3", "python"]) found.push(name);
 	if (process.platform === "win32") {
 		for (const version of [
@@ -658,6 +669,10 @@ function apply(ctx) {
 				cli: {
 					path: paths.cli,
 					exists: cliExists()
+				},
+				config: {
+					path: paths.configFile,
+					exists: existsSync(paths.configFile)
 				},
 				packages: runtime.packages,
 				renderers: await kitFacts(),

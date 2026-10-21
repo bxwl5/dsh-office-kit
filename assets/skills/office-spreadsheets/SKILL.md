@@ -10,7 +10,7 @@ A workbook is cells: each one holds a value, a format, and possibly a formula *s
 | --- | --- | --- |
 | Build a new workbook | Cells written top-left at A1; `=`-prefixed strings become formulas; styles are per-cell objects; sheets get names, widths, freeze panes, merges | `xlsx create` spec, `tasks/create-workbook.md` |
 | Change cells in an existing file | Only the cells you name change; a re-save can drop objects openpyxl does not model (pivots, foreign charts) | `container_tools/set_cells.py` and friends, `tasks/edit-workbook.md` |
-| The workbook is open in Excel/WPS and the user wants it changed live | The target is the window, not the file on disk: unsaved user edits are in play and a COM write is not transactional | `../excel-live-control/SKILL.md` |
+| The workbook is open in Excel/WPS and the user wants it changed live | The target is the window, not the file on disk: unsaved user edits are in play and a COM write is not transactional. **Windows only** — on macOS/Linux the live tool exits 3 with a remedy; edit the file instead | `../excel-live-control/SKILL.md` |
 | Inventory a file you did not write | Iterate sheets, used range, formulas vs values, merged ranges, conditional formats, defined names, charts | `container_tools/inspect_workbook.py` |
 | Compare two versions | Cell-by-cell walk with formula-aware, format-aware, structure-aware levels | `container_tools/diff_workbooks.py`, `tasks/diff-workbooks.md` |
 | Prove the numbers are real | Recalculate in Excel, then check every formula cell has a value, no error, no dangling sheet | `xlsx recalc` + `container_tools/recalc_gate.py`, `tasks/recalc-and-check.md` |

@@ -99,16 +99,40 @@ KIT_MISSING = (
 )
 
 
+def office_home() -> Path:
+    """Everything this plugin owns lives under `~/.dsh/office` (mirrors src/python.ts)."""
+    return Path.home() / ".dsh" / "office"
+
+
 def config_file() -> Path:
-    """The config.json the host half and postinstall write (mirrors src/python.ts)."""
+    """The config.json the host half and postinstall write."""
     override = os.environ.get("DSH_OFFICE_CONFIG")
-    if override:
-        return Path(override).expanduser()
-    if sys.platform == "win32":
-        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    return Path(override).expanduser() if override else office_home() / "config.json"
+
+
+def legacy_config_files() -> list[Path]:
+    """Config files older versions wrote in the OS config directory, newest first."""
+    if sys.platform == "darwin":
+        primary = Path.home() / "Library" / "Application Support" / "dsh-office-kit" / "config.json"
+    elif sys.platform == "win32":
+        primary = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "dsh-office-kit" / "config.json"
     else:
-        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-    return base / "dsh-office-kit" / "config.json"
+        primary = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "dsh-office-kit" / "config.json"
+    roaming = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "dsh-office-kit" / "config.json"
+    return list(dict.fromkeys([primary, roaming]))
+
+
+def read_config() -> dict[str, Any]:
+    """Merged config: the canonical file wins key by key over older locations."""
+    merged: dict[str, Any] = {}
+    for file in [*reversed(legacy_config_files()), config_file()]:
+        try:
+            parsed = json.loads(file.read_text("utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(parsed, dict):
+            merged.update(parsed)
+    return merged
 
 
 def saved_kit() -> tuple[str, str] | None:
@@ -118,11 +142,7 @@ def saved_kit() -> tuple[str, str] | None:
     no walk-up from the plugin directory can reach, so the host half looks it up
     while it loads and stores the result here for every later helper call.
     """
-    try:
-        parsed = json.loads(config_file().read_text("utf-8"))
-    except (OSError, ValueError):
-        return None
-    kit = parsed.get("libreofficeKit") if isinstance(parsed, dict) else None
+    kit = read_config().get("libreofficeKit")
     if not isinstance(kit, dict):
         return None
     cli = kit.get("cli")
