@@ -263,26 +263,45 @@ function savedPython(configFile, legacyConfigFile) {
 * and the kit in the harness tree, so no walk-up from the plugin can reach it.
 * The helper reads this record first; a read-only config must not stop loading.
 */
-function saveKitPath(configFile, node, cli) {
+/**
+* Merge one key into the plugin's config without disturbing the rest.
+*
+* Versions that predate the current layout left stale absolute paths behind, so
+* the record is refreshed whenever the host resolves something different.
+*/
+function saveRecord(configFile, key, value) {
 	let config = {};
 	try {
 		const parsed = JSON.parse(readFileSync(configFile, "utf8"));
 		if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) config = parsed;
 	} catch {}
-	const current = config.libreofficeKit;
-	if (current?.node === node && current.cli === cli) return;
+	if (JSON.stringify(config[key]) === JSON.stringify(value)) return;
 	const temporary = `${configFile}.${process.pid}.tmp`;
 	try {
 		mkdirSync(dirname(configFile), { recursive: true });
 		writeFileSync(temporary, `${JSON.stringify({
 			...config,
-			libreofficeKit: {
-				node,
-				cli
-			}
+			[key]: value
 		}, null, 2)}\n`, "utf8");
 		renameSync(temporary, configFile);
 	} catch {}
+}
+/**
+* Record the renderer the harness loaded so every later helper call finds it.
+*
+* A profile install keeps the plugin in `~/.dsh/profiles/<name>/node_modules`
+* and the kit in the harness tree, so no walk-up from the plugin can reach it.
+* The helper reads this record first; a read-only config must not stop loading.
+*/
+function saveKitPath(configFile, node, cli) {
+	saveRecord(configFile, "libreofficeKit", {
+		node,
+		cli
+	});
+}
+/** Record the interpreter this plugin settled on so the next probe can trust it. */
+function savePythonPath(configFile, python) {
+	saveRecord(configFile, "python", python);
 }
 /** The interpreter inside a virtual environment, which differs per platform. */
 function venvPython(venv) {
@@ -294,9 +313,10 @@ function candidates(configFile) {
 	const found = [];
 	const env = process.env.DSH_OFFICE_PYTHON;
 	if (env != null && env.length > 0) found.push(env);
+	found.push(venvPython(paths.venv));
 	const saved = savedPython(configFile, paths.legacyConfigFile);
 	if (saved != null) found.push(saved);
-	found.push(venvPython(paths.venv), venvPython(paths.legacyVenv));
+	found.push(venvPython(paths.legacyVenv));
 	const marker = join(PACKAGE_ROOT, ".python-path");
 	if (isFile(marker)) {
 		const text = readFileSync(marker, "utf8").trim();
@@ -372,9 +392,20 @@ async function inspectRuntime(configFile = officePaths().configFile) {
 		if (expanded !== candidate && !isFile(expanded)) continue;
 		const inspection = await inspectPython(expanded);
 		seen.push(inspection);
-		if (inspection.compatible && inspection.missing.length === 0) return selectRuntime(seen);
+		if (inspection.compatible && inspection.missing.length === 0) return settledRuntime(seen, configFile);
 	}
-	return selectRuntime(seen);
+	return settledRuntime(seen, configFile);
+}
+/**
+* Freeze the probe result and keep config.json honest about which interpreter won.
+*
+* A venv migrated out of the legacy data directory leaves the old absolute path
+* recorded; rewriting it stops the next launch from probing a dead path first.
+*/
+function settledRuntime(seen, configFile) {
+	const status = selectRuntime(seen);
+	if (status.state === "ok" && status.python != null && status.python.path !== savedPython(configFile)) savePythonPath(configFile, status.python.path);
+	return status;
 }
 /** Run postinstall.mjs as a child process; resolve with an error summary or undefined. */
 function runPostinstall() {

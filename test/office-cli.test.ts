@@ -300,6 +300,20 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(existsSync(png)).toBe(true)
   })
 
+  it.runIf(ready)('refreshes a stale interpreter record after the venv moves', async () => {
+    const config = join(directory, 'stale-config.json')
+    writeFileSync(config, JSON.stringify({
+      python: join(directory, 'gone', 'python.exe'),
+      libreofficeKit: { node: process.execPath, cli: 'kept' },
+    }))
+    const { inspectRuntime } = await import('../src/python')
+    const resolved = await inspectRuntime(config)
+    expect(resolved.state).toBe('ok')
+    const recorded = JSON.parse(readFileSync(config, 'utf8'))
+    expect(recorded.python).toBe(resolved.python?.path)
+    expect(recorded.libreofficeKit).toEqual({ node: process.execPath, cli: 'kept' })
+  }, 60_000)
+
   it.runIf(requireRenderer)('loads the LibreOffice kit backend for this platform', () => {
     const kit = status?.renderers.kit
     expect(kit?.available).toBe(true)

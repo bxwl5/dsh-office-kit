@@ -16,7 +16,7 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
@@ -230,7 +230,37 @@ function installPython() {
   return true
 }
 
+/**
+ * Move an upgraded install's venv out of the pre-0.4 data directory.
+ *
+ * Reusing the legacy venv in place kept the old layout alive forever, so the
+ * canonical path was only ever reached by fresh installs. A rename is instant
+ * and offline; if it fails (another volume, a locked interpreter) the legacy
+ * venv stays usable and the next install retries.
+ */
+export function migrateLegacyVenv(legacy = LEGACY_VENV_DIR, target = VENV_DIR) {
+  const interpreter = venvPythonIn(legacy)
+  if (existsSync(target) || !existsSync(interpreter)) {
+    return false
+  }
+  try {
+    mkdirSync(dirname(target), { recursive: true })
+    renameSync(legacy, target)
+    log(`moved the virtual environment from ${legacy} to ${target}`)
+    return true
+  }
+  catch (error) {
+    warn(`could not move the legacy virtual environment: ${error instanceof Error ? error.message : String(error)}`)
+    return false
+  }
+}
+
+function venvPythonIn(directory) {
+  return join(directory, IS_WINDOWS ? 'Scripts/python.exe' : 'bin/python')
+}
+
 function ensureVenv(base) {
+  migrateLegacyVenv()
   const existing = workingVenv()
   if (existing) {
     if (existing.directory === LEGACY_VENV_DIR) {

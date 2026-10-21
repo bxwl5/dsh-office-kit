@@ -1,4 +1,5 @@
-import { homedir } from 'node:os'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
@@ -6,6 +7,7 @@ import {
   CONFIG_DIR,
   installerArguments,
   LEGACY_VENV_DIR,
+  migrateLegacyVenv,
   RUNTIME_DIR,
   VENV_DIR,
 } from '../postinstall.mjs'
@@ -38,6 +40,24 @@ describe('runtime layout', () => {
   it('keeps the legacy venv as a read-only fallback path', () => {
     expect(LEGACY_VENV_DIR).not.toBe(VENV_DIR)
     expect(LEGACY_VENV_DIR).toContain('dsh-office-kit')
+  })
+
+  it('moves an upgraded install off the legacy venv instead of reusing it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-office-migrate-'))
+    try {
+      const legacy = join(root, 'legacy', 'venv')
+      const target = join(root, 'runtime', 'venv')
+      const interpreter = join(legacy, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
+      mkdirSync(join(interpreter, '..'), { recursive: true })
+      writeFileSync(interpreter, '')
+      expect(migrateLegacyVenv(legacy, target)).toBe(true)
+      expect(existsSync(interpreter.replace(legacy, target))).toBe(true)
+      expect(existsSync(legacy)).toBe(false)
+      expect(migrateLegacyVenv(legacy, target)).toBe(false)
+    }
+    finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 
