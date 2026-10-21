@@ -28,6 +28,8 @@ from pypdf import PdfReader, PdfWriter
 from reportlab.lib.colors import HexColor
 from reportlab.pdfgen import canvas
 
+from pdf_fonts import find_cjk_font, has_non_latin, register_cjk_font
+
 try:
     import pymupdf
 except ImportError:  # pragma: no cover - PyMuPDF is a required dependency
@@ -90,7 +92,8 @@ def main():
         default="bottom-center",
         help="Anchor of the stamp (default: bottom-center)",
     )
-    parser.add_argument("--font", default="Helvetica", help="reportlab base-14 font name (default: Helvetica)")
+    parser.add_argument("--font", default="Helvetica", help="reportlab font name (default: Helvetica)")
+    parser.add_argument("--font-file", help="TTF/OTF/TTC file used for the stamp; required for CJK unless a system font is found")
     parser.add_argument("--font-size", type=float, default=9.0, help="Font size in points (default: 9)")
     parser.add_argument("--color", default="#666666", help="Hex text colour (default: #666666)")
     parser.add_argument("--margin", type=float, default=28.0, help="Page-edge margin in points (default: 28)")
@@ -127,6 +130,22 @@ def main():
     page_count = len(reader.pages)
     selected = parse_pages(args.pages, page_count)
 
+    sample = args.text.format(page=1, pages=page_count)
+    font_name = args.font
+    font_file = None
+    if args.font_file or has_non_latin(sample):
+        try:
+            path = find_cjk_font(args.font_file)
+        except FileNotFoundError as exc:
+            fail(str(exc), code=2)
+        if path is None:
+            fail("stamp text needs a font beyond the base-14 Latin sets; pass --font-file with a CJK-capable TTF/TTC", code=2)
+        try:
+            font_name = register_cjk_font(path, "StampCJK")
+        except Exception as exc:
+            fail(f"cannot use font file {path}: {exc}", code=2)
+        font_file = str(path)
+
     writer = PdfWriter()
     stamped = []
     for index, page in enumerate(reader.pages, start=1):
@@ -138,9 +157,9 @@ def main():
             buffer = io.BytesIO()
             stamp = canvas.Canvas(buffer, pagesize=(width, height))
             stamp.setFillColor(colour)
-            stamp.setFont(args.font, args.font_size)
+            stamp.setFont(font_name, args.font_size)
             stamp.setFillAlpha(args.opacity)
-            text_width = stamp.stringWidth(label, args.font, args.font_size)
+            text_width = stamp.stringWidth(label, font_name, args.font_size)
             anchor = POSITIONS[args.position]
             if anchor == "left":
                 x = args.margin
@@ -185,7 +204,8 @@ def main():
         "pages": page_count,
         "stamped_pages": stamped,
         "position": args.position,
-        "font": args.font,
+        "font": font_name,
+        "font_file": font_file,
         "font_size": args.font_size,
         "color": args.color,
         "rendered_pages": rendered,

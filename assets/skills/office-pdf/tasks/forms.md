@@ -55,6 +55,15 @@ Radio groups fail most: pypdf updates the group `/V` but leaves the old button's
 
 Flatten when the file must stay uneditable: fill with `flatten=True` (the value is painted into page content), remove every widget annotation (`subtypes="/Widget"`), and drop `/AcroForm` from the catalog. Then confirm no `/Widget` and no `/AcroForm` remain; otherwise readers still treat the file as editable.
 
+## Non-Latin values
+
+pypdf's appearance writer encodes WinAnsi, so a Chinese, Japanese, or Korean value lands in `/V` but the widget paints `?` or falls back to Helvetica. The script detects non-Latin values, registers a system CJK font (YaHei, WenQuanYi, PingFang, Noto) or the `--font-file` you pass, draws the value with reportlab, and replaces `/AP /N` with that form; the field names it repainted are listed as `cjk_appearance_fields`. `--flatten` paints those streams into the page content before stripping the widgets. Verify `/V` plus the render: the subset font has no ToUnicode map, so a text dump of the appearance is not reliable evidence.
+
+```bash
+"<python>" "<skill>/scripts/forms.py" fill --input "<form.pdf>" --out "<filled.pdf>" \
+  --values '{"full_name": "张伟"}' --font-file "C:/Windows/Fonts/msyh.ttc" --render-dir "<render>"
+```
+
 ## What cannot be filled, and the fix
 
 - **No appearance stream and a broken `/DA`**: the reader may not show a new value. Render after filling; if invisible, rebuild that widget's appearance with reportlab and merge it over the page.

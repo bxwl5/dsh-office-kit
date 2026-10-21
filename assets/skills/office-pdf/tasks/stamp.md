@@ -52,7 +52,8 @@ Use each page's own `mediabox` when sizes may mix; a stamp drawn for A4 lands in
 - **Existing footers**: check the bottom margin first; the render is the proof, not the coordinate math. If a page number is already there, skip the stamp or use the opposite side.
 - **Rotated pages**: a `/Rotate 90` page renders sideways, so text drawn unrotated appears rotated. Rotate the stamp (`c.rotate(90)`, adjusting the origin), or rotate the page back first.
 - **Repeated stamping**: merging the same overlay twice doubles the opacity at the same position; re-run from the original input when iterating.
-- **Fonts**: Helvetica handles Latin; a CJK stamp needs a registered TTF, or the text renders as blank boxes. Check the render.
+- **Fonts**: Helvetica handles Latin; for CJK the script registers a system CJK font (YaHei, WenQuanYi, PingFang, Noto) and reports it as `font_file`. Pass `--font-file` with a specific TTF/OTF/TTC when the host has none; without one it exits 2 instead of drawing blank boxes. Check the render.
+- **Font files**: a `.ttc` collection needs its first face; the script handles that. Keep `--font` at its default when passing `--font-file` — the file overrides the base-14 name.
 - **Opacity**: `setFillAlpha` works only in viewers that honour transparency groups; a stamp that must show on any viewer is safer at full opacity.
 
 ## Verify

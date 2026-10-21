@@ -15,6 +15,7 @@ Exit codes: 0 success, 1 bad arguments, 2 unreadable input or write failure,
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import sys
 from pathlib import Path
@@ -30,6 +31,8 @@ try:
 except ImportError:  # pragma: no cover - pypdf is a required dependency
     IndirectObject = None  # type: ignore[assignment]
     NameObject = None  # type: ignore[assignment]
+
+from pdf_fonts import find_cjk_font, has_non_latin, register_cjk_font
 
 
 def emit(value, out=None):
@@ -47,6 +50,114 @@ def fail(message, code=1, detail=None):
         payload["detail"] = detail
     print(json.dumps(payload, ensure_ascii=False, indent=2, default=str), file=sys.stderr)
     raise SystemExit(code)
+
+
+def rebuild_cjk_appearances(path, values, font_file):
+    """Replace the appearance of text widgets whose value is non-Latin.
+
+    pypdf can only generate appearance streams with the base-14 fonts, so a
+    Chinese value would paint as question marks even though /V is correct.
+    Each such widget gets a fresh form XObject drawn with a real CJK font,
+    with the field border and background kept.
+    """
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import ArrayObject, DictionaryObject, FloatObject, NameObject, NumberObject, StreamObject
+    from reportlab.lib.colors import Color
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfgen import canvas as rl_canvas
+
+    reader = PdfReader(str(path))
+    report = inspect_document(reader)
+    targets = []
+    for widget in report["widgets"]:
+        name = widget["name"]
+        value = values.get(name)
+        if not has_non_latin(value) or widget["field_type"] != "/Tx":
+            continue
+        rect = widget["rect"]
+        if len(rect) != 4:
+            continue
+        width = float(rect[2]) - float(rect[0])
+        height = float(rect[3]) - float(rect[1])
+        if width <= 1 or height <= 1:
+            continue
+        targets.append({"page": widget["page"], "name": name, "value": value, "width": width, "height": height})
+    if not targets:
+        return []
+
+    try:
+        font_path = find_cjk_font(font_file)
+    except FileNotFoundError as exc:
+        fail(str(exc), code=2)
+    if font_path is None:
+        fail("values contain non-Latin text but no CJK font was found; pass --font-file", code=2)
+    try:
+        font_name = register_cjk_font(font_path, "FormCJK")
+    except Exception as exc:
+        fail(f"cannot use font file {font_path}: {exc}", code=2)
+
+    overlay = io.BytesIO()
+    page = rl_canvas.Canvas(overlay)
+    for target in targets:
+        width, height = target["width"], target["height"]
+        page.setPageSize((width, height))
+        page.setFillColor(Color(1, 1, 1))
+        page.rect(0, 0, width, height, stroke=0, fill=1)
+        page.setStrokeColor(Color(0.55, 0.55, 0.55))
+        page.setLineWidth(0.5)
+        page.rect(0.25, 0.25, width - 0.5, height - 0.5, stroke=1, fill=0)
+        size = min(10.0, max(height - 3, 4.0))
+        while size > 4 and pdfmetrics.stringWidth(target["value"], font_name, size) > width - 4:
+            size -= 0.5
+        page.setFillColor(Color(0, 0, 0))
+        page.setFont(font_name, size)
+        baseline = (height - size) / 2 + size * 0.22
+        page.drawString(2, baseline, target["value"])
+        page.showPage()
+    page.save()
+    overlay.seek(0)
+    overlay_reader = PdfReader(overlay)
+
+    writer = PdfWriter()
+    writer.clone_document_from_reader(reader)
+    original_pages = len(writer.pages)
+    writer.append(overlay_reader)
+    appended = writer.pages[original_pages:]
+
+    for index, target in enumerate(targets):
+        overlay_page = appended[index]
+        contents = overlay_page.get_contents()
+        data = contents.get_data() if contents is not None else b""
+        resources = overlay_page.get("/Resources")
+        stream = StreamObject()
+        stream.set_data(data)
+        stream[NameObject("/Type")] = NameObject("/XObject")
+        stream[NameObject("/Subtype")] = NameObject("/Form")
+        stream[NameObject("/FormType")] = NumberObject(1)
+        stream[NameObject("/BBox")] = ArrayObject(
+            [FloatObject(0), FloatObject(0), FloatObject(target["width"]), FloatObject(target["height"])]
+        )
+        if resources is not None:
+            stream[NameObject("/Resources")] = resources
+        reference = writer._add_object(stream)
+        page = writer.pages[target["page"] - 1]
+        for annotation in page.get("/Annots") or []:
+            obj = annotation.get_object()
+            if obj.get("/Subtype") != "/Widget":
+                continue
+            parent = obj.get("/Parent")
+            source = parent.get_object() if parent is not None else obj
+            tag = obj.get("/T") or source.get("/T")
+            if str(tag) != target["name"]:
+                continue
+            obj[NameObject("/AP")] = DictionaryObject({NameObject("/N"): reference})
+            break
+
+    while len(writer.pages) > original_pages:
+        writer.remove_page(len(writer.pages) - 1)
+    with open(path, "wb") as handle:
+        writer.write(handle)
+    return [target["name"] for target in targets]
 
 
 def ref_id(node):
@@ -285,6 +396,85 @@ def values_for_field(field, value):
     return str(value)
 
 
+def flatten_widgets(path):
+    """Paint every widget appearance into page content and drop the form."""
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import ArrayObject, DictionaryObject, FloatObject, NameObject, StreamObject
+
+    reader = PdfReader(str(path))
+    writer = PdfWriter()
+    writer.clone_document_from_reader(reader)
+
+    for page in writer.pages:
+        annotations = page.get("/Annots")
+        if not annotations:
+            continue
+        resources = page.get("/Resources")
+        if resources is None:
+            resources = DictionaryObject()
+            page[NameObject("/Resources")] = resources
+        resources = resources.get_object()
+        xobjects = resources.get("/XObject")
+        if xobjects is None:
+            xobjects = DictionaryObject()
+            resources[NameObject("/XObject")] = xobjects
+        xobjects = xobjects.get_object()
+
+        calls = []
+        for index, annotation in enumerate(annotations):
+            widget = annotation.get_object()
+            if widget.get("/Subtype") != "/Widget":
+                continue
+            normal = widget.get("/AP")
+            if normal is None:
+                continue
+            normal = normal.get_object().get("/N")
+            if normal is None:
+                continue
+            normal = normal.get_object()
+            if not hasattr(normal, "get_data"):
+                if not hasattr(normal, "keys"):
+                    continue
+                state = widget.get("/AS")
+                if state is None or normal.get(state) is None:
+                    continue
+                normal = normal[state].get_object()
+            if not hasattr(normal, "get_data"):
+                continue
+            name = NameObject(f"/DSCJK{index}")
+            xobjects[name] = normal.indirect_reference or normal
+            rect = [float(value) for value in widget.get("/Rect") or []]
+            bbox = [float(value) for value in normal.get("/BBox") or []]
+            if len(rect) != 4 or len(bbox) != 4:
+                continue
+            x, y, x2, y2 = rect[0], rect[1], rect[2], rect[3]
+            width = x2 - x
+            height = y2 - y
+            box_width = bbox[2] - bbox[0] or width
+            box_height = bbox[3] - bbox[1] or height
+            calls.append(
+                f"q {width / box_width:.6f} 0 0 {height / box_height:.6f} {x:.4f} {y:.4f} cm {name} Do Q"
+            )
+        if not calls:
+            continue
+        stream = StreamObject()
+        stream.set_data("\n".join(calls).encode("latin-1"))
+        reference = writer._add_object(stream)
+        existing = page.get("/Contents")
+        if existing is None:
+            page[NameObject("/Contents")] = reference
+        elif hasattr(existing, "get_data"):
+            page[NameObject("/Contents")] = ArrayObject([existing.indirect_reference or existing, reference])
+        else:
+            page[NameObject("/Contents")] = ArrayObject([*existing, reference])
+
+    for page in writer.pages:
+        page[NameObject("/Annots")] = ArrayObject()
+    writer.root_object.pop(NameObject("/AcroForm"), None)
+    with open(path, "wb") as handle:
+        writer.write(handle)
+
+
 def write_fill(args, values):
     from pypdf import PdfReader, PdfWriter
 
@@ -332,15 +522,27 @@ def write_fill(args, values):
         payload = current
     payload = {name: values_for_field(fields[name], value) for name, value in payload.items()}
 
-    writer.update_page_form_field_values(None, payload, auto_regenerate=False, flatten=args.flatten)
-    sync_button_states(writer)
-    if args.flatten:
-        writer.remove_annotations(subtypes="/Widget")
-        writer.root_object.pop(NameObject("/AcroForm"), None)
+    cjk_values = {name: value for name, value in expected.items() if has_non_latin(value)}
+    flatten = args.flatten
+    if flatten and cjk_values:
+        # pypdf can only flatten with base-14 fonts; keep the widgets, give them
+        # real CJK appearances, then paint every appearance into the page.
+        writer.update_page_form_field_values(None, payload, auto_regenerate=False, flatten=False)
+        sync_button_states(writer)
+    else:
+        writer.update_page_form_field_values(None, payload, auto_regenerate=False, flatten=flatten)
+        sync_button_states(writer)
+        if flatten:
+            writer.remove_annotations(subtypes="/Widget")
+            writer.root_object.pop(NameObject("/AcroForm"), None)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with open(args.out, "wb") as handle:
         writer.write(handle)
+
+    cjk_rendered = rebuild_cjk_appearances(args.out, expected, args.font_file)
+    if flatten and cjk_values:
+        flatten_widgets(args.out)
 
     checks = verify(args.out, expected, flatten=args.flatten)
     rendered = render(args.out, args.render_dir, args.dpi)
@@ -351,6 +553,7 @@ def write_fill(args, values):
         "output": str(args.out),
         "flatten": args.flatten,
         "reattached_fields": reattached,
+        "cjk_appearance_fields": cjk_rendered,
         "written": expected,
         "checks": checks,
         "rendered_pages": rendered,
@@ -517,6 +720,7 @@ def main():
         help='JSON object of {field: value}; accepts a file path, inline JSON, or "-" for stdin',
     )
     fill_parser.add_argument("--flatten", action="store_true", help="Paint values and remove every widget")
+    fill_parser.add_argument("--font-file", help="TTF/OTF/TTC file used to paint non-Latin values")
     fill_parser.add_argument("--no-reattach", action="store_true", help="Do not repair widgets missing from /AcroForm/Fields")
     fill_parser.add_argument("--allow-ambiguous", action="store_true", help="Fill even when widget and field views disagree")
     fill_parser.add_argument("--render-dir", help="Rasterise the result here for a visual check")
