@@ -326,7 +326,7 @@ describe.runIf(ready)('office CLI integration', () => {
   it.runIf(canRenderDocx)('renders DOCX pages to PNG through the LibreOffice kit', () => {
     const file = create('documents', '季度 报告-渲染')
     const out = join(directory, 'render')
-    const result = runCli(python!, ['docx', 'render', '--input', file, '--out-dir', out])
+    const result = runCli(python!, ['docx', 'render', '--input', file, '--out-dir', out, '--pdf'])
     expect(result.renderer).toBe('libreoffice-kit')
     expect(['native', 'wasm']).toContain(result.engine)
     expect(result.page_count).toBeGreaterThan(0)
@@ -337,7 +337,33 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(pages.length).toBe(result.page_count)
     for (const page of pages)
       expect(readFileSync(join(out, page)).byteLength).toBeGreaterThan(10_000)
-  }, 60_000)
+    const pdf = String(result.pdf)
+    expect(readFileSync(pdf).subarray(0, 4).toString()).toBe('%PDF')
+  }, 120_000)
+
+  it.runIf(canRenderDocx)('renders PPTX slides and XLSX sheets through the LibreOffice kit', () => {
+    const deck = create('presentations', '渲染 检查')
+    const slides = runCli(python!, ['pptx', 'render', '--input', deck, '--out-dir', join(directory, 'render-pptx')])
+    expect(slides.renderer).toBe('libreoffice-kit')
+    expect(slides.page_count).toBeGreaterThan(0)
+    expect(slides.pages.length).toBe(slides.page_count)
+    const book = create('spreadsheets', '渲染 表格')
+    const sheets = runCli(python!, ['xlsx', 'render', '--input', book, '--out-dir', join(directory, 'render-xlsx')])
+    expect(sheets.renderer).toBe('libreoffice-kit')
+    expect(sheets.page_count).toBeGreaterThan(0)
+    for (const image of sheets.images as { sheet: string | null, range: string | null }[]) {
+      expect(image.sheet).toBeTruthy()
+      expect(image.range).toMatch(/^[A-Z]+\d+(?::[A-Z]+\d+)?$/u)
+    }
+  }, 120_000)
+
+  it.runIf(canRenderDocx)('rasterises PDF pages exported by the kit', () => {
+    const file = create('documents', 'PDF 栅格-来源')
+    const result = runCli(python!, ['docx', 'render', '--input', file, '--out-dir', join(directory, 'render-pdf-src'), '--pdf'])
+    const pages = runCli(python!, ['pdf', 'render', '--input', String(result.pdf), '--out-dir', join(directory, 'pdf-pages')])
+    expect(pages.page_count).toBeGreaterThan(0)
+    expect(pages.pages.length).toBe(pages.page_count)
+  }, 120_000)
 
   it.runIf(canRenderDocx)('reports substituted fonts instead of silently producing tofu', () => {
     const file = join(directory, '缺字体.docx')
