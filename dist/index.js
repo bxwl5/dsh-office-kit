@@ -1,11 +1,12 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { BUNDLED_SKILL_RANK } from "@deepseek-ai/dsh-skill";
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 //#region src/features.ts
 /** The four entries, in menu order. */
@@ -391,55 +392,61 @@ function parseSkill(raw, path) {
 		content: raw.slice(match[0].length).trim()
 	};
 }
-function findFile(candidates) {
-	for (const path of candidates) if (existsSync(path)) return path;
-	return null;
-}
-const WPS_BINARIES = {
-	writer: "wps.exe",
-	presentation: "wpp.exe",
-	spreadsheet: "et.exe"
-};
-const WPS_ROOTS = [
-	process.env.WPS_OFFICE_HOME ?? "",
-	"C:\\Program Files\\Kingsoft\\WPS Office",
-	"C:\\Program Files (x86)\\Kingsoft\\WPS Office",
-	join(process.env.LOCALAPPDATA ?? "", "Kingsoft", "WPS Office")
-].filter(Boolean);
-function wpsInstalled(binary) {
-	for (const root of WPS_ROOTS) {
-		if (existsSync(join(root, "office6", binary))) return true;
-		try {
-			for (const version of readdirSync(root)) if (existsSync(join(root, version, "office6", binary))) return true;
-		} catch {}
-	}
-	return false;
-}
-function rendererFacts() {
-	const libreoffice = findFile([
-		process.env.SOFFICE ?? "",
-		"C:\\Program Files\\LibreOffice\\program\\soffice.exe",
-		"C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe",
-		"/Applications/LibreOffice.app/Contents/MacOS/soffice",
-		"/usr/bin/soffice",
-		"/usr/local/bin/soffice"
-	].filter(Boolean));
-	const officeRoots = ["C:\\Program Files\\Microsoft Office\\root\\Office16", "C:\\Program Files (x86)\\Microsoft Office\\root\\Office16"];
-	return {
-		libreoffice,
-		microsoftOffice: {
-			word: officeRoots.some((root) => existsSync(join(root, "WINWORD.EXE"))),
-			powerpoint: officeRoots.some((root) => existsSync(join(root, "POWERPNT.EXE"))),
-			excel: officeRoots.some((root) => existsSync(join(root, "EXCEL.EXE")))
-		},
-		kingsoftWps: {
-			writer: wpsInstalled(WPS_BINARIES.writer),
-			presentation: wpsInstalled(WPS_BINARIES.presentation),
-			spreadsheet: wpsInstalled(WPS_BINARIES.spreadsheet)
-		}
-	};
-}
+const KIT_MISSING = "the DSH LibreOffice kit (@deepseek-ai/libreoffice-kit) was not found: install this plugin inside the harness tree, or point DSH_LIBREOFFICE_KIT_CLI at <kit>/lib/cli.js";
 const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
+const runKit = promisify(execFile);
+/** Locate the kit the same way python/office_cli.py does, so both halves agree. */
+function findKitCli() {
+	const override = process.env.DSH_LIBREOFFICE_KIT_CLI;
+	if (override != null && existsSync(override)) return override;
+	let directory = PACKAGE_ROOT;
+	for (;;) {
+		const candidate = join(directory, "node_modules", "@deepseek-ai", "libreoffice-kit", "lib", "cli.js");
+		if (existsSync(candidate)) return candidate;
+		const parent = dirname(directory);
+		if (parent === directory) return null;
+		directory = parent;
+	}
+}
+async function kitFacts() {
+	const cli = findKitCli();
+	if (cli == null) return {
+		available: false,
+		node: null,
+		cli: null,
+		version: null,
+		backend: null,
+		remedy: KIT_MISSING
+	};
+	const node = process.env.DSH_NODE ?? process.execPath;
+	try {
+		const { stdout } = await runKit(node, [
+			cli,
+			"capabilities",
+			"--json"
+		], {
+			timeout: 12e4,
+			maxBuffer: 8 * 1024 * 1024
+		});
+		const parsed = JSON.parse(stdout);
+		return {
+			available: true,
+			node,
+			cli,
+			version: typeof parsed.runtime?.version === "string" ? parsed.runtime.version : null,
+			backend: typeof parsed.runtime?.backend === "string" ? parsed.runtime.backend : null
+		};
+	} catch (error) {
+		return {
+			available: true,
+			node,
+			cli,
+			version: null,
+			backend: null,
+			error: error instanceof Error ? error.message.split("\n")[0] ?? error.message : String(error)
+		};
+	}
+}
 function pluginVersion() {
 	try {
 		const parsed = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8"));
@@ -521,7 +528,7 @@ function apply(ctx) {
 	ctx.effect(() => ctx.skills.registerProvider(() => provider), "office-suite: skills");
 	ctx.effect(() => ctx.tools.register(defineTool({
 		name: "office_status",
-		description: "Report the Office runtime state: compatible Python, installed Python packages, helper CLI path, and document renderers (LibreOffice, Microsoft Office, or WPS Office). Call this before Office file work.",
+		description: "Report the Office runtime state: compatible Python, installed Python packages, helper CLI path, and document renderers (the DSH LibreOffice kit). Call this before Office file work.",
 		parameters: {},
 		output: {
 			schema: { type: "string" },
@@ -560,7 +567,7 @@ function apply(ctx) {
 					exists: cliExists()
 				},
 				packages: runtime.packages,
-				renderers: rendererFacts(),
+				renderers: await kitFacts(),
 				skills: candidates.map((candidate) => candidate.name)
 			};
 			return JSON.stringify(report, null, 2);

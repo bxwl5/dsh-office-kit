@@ -5,11 +5,11 @@ Rendering is the only honest check that a document looks right: XML can be valid
 and still overlap, clip or reflow badly.  This script keeps the plumbing in one
 place so tasks can say "render it, look at the images" and mean a single command.
 
-The render verb needs a real Word engine (Microsoft Word, WPS Writer, or
-LibreOffice).  When none is installed the script reports exactly that and exits 3,
-because a placeholder image would be worse than no image.
+The render verb needs the DSH LibreOffice kit.  When the kit cannot be found the
+script reports exactly that and exits 3, because a placeholder image would be
+worse than no image.
 
-Exit codes: 0 rendered, 1 render failed, 3 no renderer installed, 2 bad input.
+Exit codes: 0 rendered, 1 render failed, 3 no renderer available, 2 bad input.
 """
 
 from __future__ import annotations
@@ -62,6 +62,8 @@ def main(argv: list[str] | None = None) -> int:
     command = ["docx", "render", "--input", str(source), "--out-dir", str(out_dir)]
     if args.dpi:
         command += ["--dpi", str(args.dpi)]
+    if args.emit_pdf:
+        command += ["--pdf"]
     code, stdout, stderr = kit.run_office_cli(command)
     payload = kit.cli_json(stdout) or kit.cli_json(stderr) or {}
     pages = payload.get("pages") or []
@@ -72,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
             lines = [line for line in (stderr or stdout or "").splitlines() if line.strip() not in ("", "{", "}")]
             detail = lines[-1].strip() if lines else "render failed"
         if "renderer" in detail.lower() or "libreoffice" in detail.lower():
-            kit.emit({"ok": False, "reason": "no_renderer", "detail": detail, "remedy": "Install Microsoft Office, WPS Office, or LibreOffice, then re-run this command."})
+            kit.emit({"ok": False, "reason": "no_renderer", "detail": detail, "remedy": "Install this plugin inside the DeepSeek Harness tree so @deepseek-ai/libreoffice-kit is available, or set DSH_LIBREOFFICE_KIT_CLI, then re-run this command."})
             return 3
         kit.emit({"ok": False, "reason": "render_failed", "detail": detail})
         return 1
@@ -86,6 +88,9 @@ def main(argv: list[str] | None = None) -> int:
         "pages": pages,
         "page_count": len(pages),
         "renderer": payload.get("renderer"),
+        "missing_fonts": payload.get("missing_fonts") or [],
+        "glyph_fallback": bool(payload.get("glyph_fallback")),
+        "warnings": payload.get("warnings") or [],
     }
     if args.emit_pdf and payload.get("pdf"):
         result["pdf"] = payload["pdf"]

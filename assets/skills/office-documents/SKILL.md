@@ -45,7 +45,7 @@ Rendering is the only proof that a document looks right.
 The command writes a PDF plus one PNG per page and prints the paths. Open each PNG with `read_image` and check: heading hierarchy, table width and cell wrapping, page breaks, header/footer, clipped or overflowing text, missing glyphs (dashes, CJK, symbols), equation rendering, and caption placement.
 
 - Iterate until the pages look correct, then deliver. "It parses" is not verification.
-- If the runtime reports no renderer (none of Microsoft Word, WPS Writer, or LibreOffice), ask the user to install one, or fall back to `docx read` plus the audit scripts. Say plainly that layout was not visually verified — do not describe a page you did not see.
+- If the runtime reports no renderer (`renderers.can_render.docx: false` — the DSH LibreOffice kit is missing), ask the user to fix the install, or fall back to `docx read` plus the audit scripts. Say plainly that layout was not visually verified — do not describe a page you did not see.
 - After a script edits XML, re-render. A package can stay valid while the page it produces is broken.
 
 ## Choosing a route

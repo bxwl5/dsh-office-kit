@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     if code_a != 0 or code_b != 0 or not pages_a or not pages_b:
         detail = detail_a or detail_b or "render failed"
         reason = "no_renderer" if ("renderer" in detail.lower() or "libreoffice" in detail.lower()) else "render_failed"
-        kit.emit({"ok": False, "reason": reason, "detail": detail, "remedy": "Install Microsoft Office, WPS Office, or LibreOffice, then re-run."})
+        kit.emit({"ok": False, "reason": reason, "detail": detail, "remedy": "Install this plugin inside the DeepSeek Harness tree so @deepseek-ai/libreoffice-kit is available, or set DSH_LIBREOFFICE_KIT_CLI, then re-run."})
         return 3 if reason == "no_renderer" else 1
 
     pairs = list(zip(pages_a, pages_b))

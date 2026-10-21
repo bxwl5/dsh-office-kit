@@ -126,9 +126,8 @@ Choose the edit that the helper actually supports:
   rebuild as a surgical edit.
 
 Verify with `<cli> pdf render --input "report-edited.pdf" --out-dir "render"` and
-`read_image render/page-1.png`. `pdf render` uses PyMuPDF and works without
-LibreOffice or Office, so a PDF annotation is never blocked by a missing
-renderer.
+`read_image render/page-1.png`. `pdf render` uses PyMuPDF and works without the
+LibreOffice kit, so a PDF annotation is never blocked by a missing renderer.
 
 ## pptx — select the shapes that overlap the region
 
@@ -234,10 +233,10 @@ Forbidden, because both produce plausible-looking edits in the wrong place:
   its own zoom and scroll;
 - naming a sheet the screenshot does not show or `xlsx read` cannot match.
 
-Visual confirmation needs `xlsx render`, which requires LibreOffice or Office;
-without one, say the change is verified structurally but not visually. Formula
-results stay uncalculated unless `xlsx recalc` runs on Windows with Microsoft
-Excel; do not present openpyxl's empty cache as a computed value.
+Visual confirmation needs `xlsx render`, which requires the DSH LibreOffice kit;
+without it, say the change is verified structurally but not visually. Formula
+results stay uncalculated until `xlsx recalc` runs (the kit recalculates on any
+platform); do not present openpyxl's empty cache as a computed value.
 
 ## When to stop and ask
 

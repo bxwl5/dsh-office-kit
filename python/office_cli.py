@@ -17,7 +17,7 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
+import uuid
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -84,197 +84,197 @@ def ensure_parent(path: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Shared rendering helpers
+# LibreOffice kit (the renderer DSH ships)
 # ---------------------------------------------------------------------------
 
+#: Where the kit's CLI lives inside any node_modules tree that hosts this plugin.
+KIT_RELATIVE = Path("node_modules") / "@deepseek-ai" / "libreoffice-kit" / "lib" / "cli.js"
 
-def find_soffice() -> str | None:
-    candidates = [
-        os.environ.get("SOFFICE"),
-        r"C:\Program Files\LibreOffice\program\soffice.exe",
-        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
-        "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-        "/usr/bin/soffice",
-        "/usr/local/bin/soffice",
-    ]
-    for candidate in candidates:
-        if candidate and Path(candidate).is_file():
-            return candidate
-    found = shutil.which("soffice")
-    return found
+#: Actionable explanation used whenever the kit cannot be located.
+KIT_MISSING = (
+    "the LibreOffice renderer is not available: the DSH LibreOffice kit was not found. "
+    "It ships with DeepSeek Harness as @deepseek-ai/libreoffice-kit; install the plugin "
+    "inside the harness tree, or point DSH_LIBREOFFICE_KIT_CLI at <kit>/lib/cli.js"
+)
 
 
-#: Automation entry points per suite and format: (executable, COM ProgID).
-RENDER_ENGINES: dict[str, dict[str, tuple[str, str]]] = {
-    "microsoft": {
-        "docx": ("WINWORD.EXE", "Word.Application"),
-        "pptx": ("POWERPNT.EXE", "PowerPoint.Application"),
-        "xlsx": ("EXCEL.EXE", "Excel.Application"),
-    },
-    "kingsoft": {
-        "docx": ("wps.exe", "KWps.Application"),
-        "pptx": ("wpp.exe", "KWpp.Application"),
-        "xlsx": ("et.exe", "Ket.Application"),
-    },
-}
+def find_kit() -> tuple[str, str] | None:
+    """Return (node, kit CLI) for the bundled renderer, or None when it is absent.
 
-
-def _kingsoft_dirs() -> list[Path]:
-    """WPS Office hides its binaries under a per-version directory."""
-    bases = [
-        os.environ.get("WPS_OFFICE_HOME"),
-        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Kingsoft", "WPS Office"),
-        os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Kingsoft", "WPS Office"),
-        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Kingsoft", "WPS Office"),
-    ]
-    found: list[Path] = []
-    for base in bases:
-        if not base:
-            continue
-        root = Path(base)
-        if (root / "office6").is_dir():
-            found.append(root / "office6")
-            continue
-        if not root.is_dir():
-            continue
-        versions = [child for child in root.iterdir() if (child / "office6").is_dir()]
-        versions.sort(key=lambda child: [int(part) if part.isdigit() else part for part in child.name.replace("-", ".").split(".")], reverse=True)
-        for child in versions:
-            found.append(child / "office6")
-    return found
-
-
-def office_engine(kind: str, family: str | None = None) -> tuple[str, str] | None:
-    """Return (suite, executable) for an installed Office-compatible application."""
-    if sys.platform != "win32":
+    Resolution walks up from this file, which covers both layouts that matter:
+    a plugin-local dependency (`<plugin>/node_modules/...`) and the harness
+    install (`<dsh>/node_modules/dsh-office-kit/../../@deepseek-ai/...`).
+    """
+    candidates: list[Path] = []
+    override = os.environ.get("DSH_LIBREOFFICE_KIT_CLI")
+    if override:
+        candidates.append(Path(override).expanduser())
+    for root in (PACKAGE_ROOT, *PACKAGE_ROOT.parents):
+        candidates.append(root / KIT_RELATIVE)
+    cli = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if cli is None:
         return None
-    families = [family] if family else ["microsoft", "kingsoft"]
-    for name in families:
-        executable = RENDER_ENGINES[name][kind][0]
-        if name == "microsoft":
-            roots = [
-                r"C:\Program Files\Microsoft Office\root\Office16",
-                r"C:\Program Files (x86)\Microsoft Office\root\Office16",
-                r"C:\Program Files\Microsoft Office\Office16",
-                r"C:\Program Files (x86)\Microsoft Office\Office16",
-            ]
-            for root in roots:
-                candidate = Path(root) / executable
-                if candidate.is_file():
-                    return name, str(candidate)
-            continue
-        for directory in _kingsoft_dirs():
-            candidate = directory / executable
-            if candidate.is_file():
-                return name, str(candidate)
-    return None
+    node = os.environ.get("DSH_NODE") or shutil.which("node")
+    if node is None:
+        return None
+    return node, str(cli)
 
 
-def office_binary(kind: str) -> str | None:
-    engine = office_engine(kind)
-    return engine[1] if engine else None
-
-
-def _engine_path(kind: str, family: str) -> str | None:
-    engine = office_engine(kind, family)
-    return engine[1] if engine else None
-
-
-def _powershell() -> str | None:
-    return shutil.which("powershell") or shutil.which("pwsh")
-
-
-def _office_script(kind: str, family: str) -> str:
-    progid = RENDER_ENGINES[family][kind][1]
-    if kind == "docx":
-        if family == "kingsoft":
-            return rf"""
-$ErrorActionPreference = 'Stop'
-$app = New-Object -ComObject {progid}
-$app.Visible = $false
-$app.DisplayAlerts = 0
-$doc = $app.Documents.Open($env:DSH_INPUT, $false, $true)
-try {{ $doc.SaveAs([ref]$env:DSH_PDF, [ref]17) }} finally {{ $doc.Close(0); $app.Quit() }}
-"""
-        return rf"""
-$ErrorActionPreference = 'Stop'
-$app = New-Object -ComObject {progid}
-$app.Visible = $false
-$app.DisplayAlerts = 0
-$doc = $app.Documents.Open($env:DSH_INPUT, $false, $true)
-try {{ $doc.ExportAsFixedFormat($env:DSH_PDF, 17) }} finally {{ $doc.Close(0); $app.Quit() }}
-"""
-    if kind == "pptx":
-        return rf"""
-$ErrorActionPreference = 'Stop'
-$app = New-Object -ComObject {progid}
-$app.DisplayAlerts = 1
-$pres = $app.Presentations.Open($env:DSH_INPUT, $true, $false, $false)
-try {{ $pres.SaveAs($env:DSH_PDF, 32) }} finally {{ $pres.Close(); $app.Quit() }}
-"""
-    return rf"""
-$ErrorActionPreference = 'Stop'
-$app = New-Object -ComObject {progid}
-$app.Visible = $false
-$app.DisplayAlerts = $false
-$wb = $app.Workbooks.Open($env:DSH_INPUT)
-try {{ $wb.ExportAsFixedFormat(0, $env:DSH_PDF) }} finally {{ $wb.Close($false); $app.Quit() }}
-"""
-
-
-def export_pdf(input_path: Path, kind: str, out_dir: Path) -> tuple[str, str]:
-    """Export an Office file to PDF. Returns (renderer, pdf path)."""
-    out_dir.mkdir(parents=True, exist_ok=True)
-    pdf = out_dir / (input_path.stem + ".pdf")
-    if pdf.exists():
-        pdf.unlink()
-
-    power_shell = _powershell()
-    failures: list[str] = []
-    if power_shell:
-        for family, renderer in (("microsoft", "microsoft-office"), ("kingsoft", "kingsoft-wps")):
-            engine = office_engine(kind, family)
-            if engine is None:
-                continue
-            script = Path(tempfile.gettempdir()) / f"dsh-office-{kind}-{os.getpid()}.ps1"
-            script.write_text(_office_script(kind, family), encoding="utf-8")
-            env = dict(os.environ)
-            env["DSH_INPUT"] = str(input_path.resolve())
-            env["DSH_PDF"] = str(pdf.resolve())
-            try:
-                completed = subprocess.run(
-                    [power_shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script)],
-                    capture_output=True,
-                    text=True,
-                    timeout=240,
-                    env=env,
-                )
-            except subprocess.TimeoutExpired:
-                failures.append(f"{family}: timed out")
-                continue
-            finally:
-                script.unlink(missing_ok=True)
-            if completed.returncode == 0 and pdf.is_file():
-                return renderer, str(pdf)
-            failures.append(f"{family}: " + ((completed.stderr or completed.stdout).strip() or "no PDF produced"))
-
-    soffice = find_soffice()
-    if soffice:
+def _kit_call(arguments: list[str], timeout: int = 300) -> dict[str, Any]:
+    """Run one kit command and return its JSON report, failing with the kit's own words."""
+    kit = find_kit()
+    if kit is None:
+        fail(KIT_MISSING)
+    node, cli = kit
+    try:
         completed = subprocess.run(
-            [soffice, "--headless", "--norestore", "--convert-to", "pdf", "--outdir", str(out_dir), str(input_path)],
+            [node, cli, *arguments],
             capture_output=True,
             text=True,
-            timeout=240,
+            # The kit always speaks UTF-8; the locale code page would mangle CJK paths.
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
         )
-        if completed.returncode != 0 or not pdf.is_file():
-            detail = (completed.stderr or completed.stdout).strip()
-            fail(f"LibreOffice export failed for {input_path.name}", detail=detail or None)
-        return "libreoffice", str(pdf)
+    except subprocess.TimeoutExpired:
+        fail(f"the LibreOffice kit timed out after {timeout}s ({arguments[0]})")
+    except OSError as exc:
+        fail(f"cannot start the LibreOffice kit: {exc}", detail=KIT_MISSING)
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()[:4000]
+        fail(f"the LibreOffice kit could not run '{arguments[0]}'", detail=detail or None)
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        fail(
+            f"the LibreOffice kit printed no JSON report for '{arguments[0]}'",
+            detail=(completed.stdout or completed.stderr).strip()[:800] or None,
+        )
+    if not isinstance(payload, dict):
+        fail(f"the LibreOffice kit printed an unexpected report for '{arguments[0]}'")
+    return payload
 
-    fail(
-        "no document renderer found: install LibreOffice, Microsoft Office, or WPS Office",
-        detail="; ".join(failures) or None,
-    )
+
+def kit_report() -> dict[str, Any]:
+    """Describe the kit without ever failing: status output must survive a missing runtime."""
+    kit = find_kit()
+    if kit is None:
+        return {"available": False, "remedy": KIT_MISSING}
+    node, cli = kit
+    report: dict[str, Any] = {"available": True, "node": node, "cli": cli, "backend": None, "version": None}
+    try:
+        completed = subprocess.run(
+            [node, cli, "capabilities", "--json"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        report["error"] = f"{type(exc).__name__}: {exc}"
+        return report
+    if completed.returncode != 0:
+        report["error"] = ((completed.stderr or completed.stdout).strip() or f"capabilities exited {completed.returncode}")[:800]
+        return report
+    try:
+        runtime = (json.loads(completed.stdout) or {}).get("runtime") or {}
+    except (json.JSONDecodeError, AttributeError):
+        report["error"] = "capabilities printed no JSON"
+        return report
+    report["backend"] = runtime.get("backend")
+    report["version"] = runtime.get("version")
+    return report
+
+
+def glyph_warnings(missing: list[str]) -> list[str]:
+    """Turn the kit's missing-font list into one warning a caller can act on."""
+    if not missing:
+        return []
+    return [
+        f"{len(missing)} font(s) used by this file are not installed: {', '.join(missing)}. "
+        "The file rendered, but that text uses a fallback font and may reflow or show boxes; "
+        "a zero exit code only means the renderer ran."
+    ]
+
+
+def report_warnings(warnings: list[str]) -> None:
+    for warning in warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+
+
+def export_pdf(input_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
+    """Convert to PDF through the kit. `dpi` is accepted for signature compatibility."""
+    del dpi
+    out_dir.mkdir(parents=True, exist_ok=True)
+    pdf = out_dir / (input_path.stem + ".pdf")
+    report = _kit_call(["convert", "--input", str(input_path), "--output", str(pdf)])
+    produced = Path(report.get("outputPath") or pdf)
+    if not produced.is_file():
+        fail(f"the LibreOffice kit reported a PDF export for {input_path.name} but wrote none")
+    return {
+        "pdf": str(produced),
+        "missing_fonts": [str(name) for name in report.get("missingFonts") or []],
+    }
+
+
+def render_office(input_path: Path, kind: str, out_dir: Path, dpi: int, emit_pdf: bool = False) -> dict[str, Any]:
+    """Rasterise an Office file page by page through the kit.
+
+    The kit creates its output directory itself and refuses an existing one, so
+    render into a staging directory and move the artifacts into the caller's
+    directory, which may be reused across renders.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    staging = out_dir / f".kit-render-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    report = _kit_call(["render", "--input", str(input_path), "--output-dir", str(staging), "--dpi", str(dpi)])
+    images = []
+    for item in report.get("images") or []:
+        if not item.get("path"):
+            continue
+        source = Path(item["path"])
+        target = out_dir / source.name
+        os.replace(source, target)
+        images.append({
+            "page": item.get("page"),
+            "sheet": item.get("sheet"),
+            "range": item.get("range"),
+            "width": item.get("width"),
+            "height": item.get("height"),
+            "bytes": item.get("byteLength"),
+            "path": str(target),
+        })
+    manifest = staging / "manifest.json"
+    if manifest.is_file():
+        os.replace(manifest, out_dir / manifest.name)
+    shutil.rmtree(staging, ignore_errors=True)
+    if not images:
+        fail(f"the LibreOffice kit rendered no pages for {input_path.name}")
+    missing = [str(name) for name in report.get("missingFonts") or []]
+    warnings = glyph_warnings(missing)
+    report_warnings(warnings)
+    result: dict[str, Any] = {
+        "ok": True,
+        "kind": kind,
+        "input": str(input_path),
+        "renderer": "libreoffice-kit",
+        "engine": report.get("backend"),
+        "page_count": len(images),
+        "pages": [image["path"] for image in images],
+        "images": images,
+        "missing_fonts": missing,
+        "glyph_fallback": bool(missing),
+        "warnings": warnings,
+    }
+    if emit_pdf:
+        converted = export_pdf(input_path, out_dir, dpi)
+        result["pdf"] = converted["pdf"]
+        if not missing and converted["missing_fonts"]:
+            result["missing_fonts"] = converted["missing_fonts"]
+            result["glyph_fallback"] = True
+            result["warnings"] = glyph_warnings(converted["missing_fonts"])
+            report_warnings(result["warnings"])
+    return result
 
 
 def rasterize_pdf(pdf: str, out_dir: Path, dpi: int = 110) -> list[str]:
@@ -298,20 +298,6 @@ def rasterize_pdf(pdf: str, out_dir: Path, dpi: int = 110) -> list[str]:
     finally:
         document.close()
     return pages
-
-
-def render_office(input_path: Path, kind: str, out_dir: Path, dpi: int) -> dict[str, Any]:
-    renderer, pdf = export_pdf(input_path, kind, out_dir)
-    pages = rasterize_pdf(pdf, out_dir, dpi)
-    return {
-        "ok": True,
-        "kind": kind,
-        "input": str(input_path),
-        "renderer": renderer,
-        "pdf": pdf,
-        "page_count": len(pages),
-        "pages": pages,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -1130,38 +1116,14 @@ def xlsx_read(input_path: Path, data_only: bool = False) -> dict[str, Any]:
 
 
 def xlsx_recalc(input_path: Path, out: Path) -> dict[str, Any]:
-    """Force a spreadsheet application to recalculate and store cached formula values."""
-    engine = office_engine("xlsx") if sys.platform == "win32" else None
-    if engine is None or _powershell() is None:
-        fail("formula recalculation requires Microsoft Excel or WPS Spreadsheets on Windows; openpyxl cannot evaluate formulas")
-    family, executable = engine
-    progid = RENDER_ENGINES[family]["xlsx"][1]
+    """Recalculate formulas through the LibreOffice kit and store the cached values."""
     ensure_parent(str(out))
-    if out.resolve() != input_path.resolve():
-        shutil.copyfile(input_path, out)
-    script = Path(tempfile.gettempdir()) / f"dsh-office-recalc-{os.getpid()}.ps1"
-    script.write_text(rf"""
-$ErrorActionPreference = 'Stop'
-$app = New-Object -ComObject {progid}
-$app.Visible = $false
-$app.DisplayAlerts = $false
-$wb = $app.Workbooks.Open($env:DSH_OUT)
-try {{ $app.CalculateFull(); $wb.Save() }} finally {{ $wb.Close($true); $app.Quit() }}
-""", encoding="utf-8")
-    env = dict(os.environ)
-    env["DSH_OUT"] = str(out.resolve())
-    try:
-        completed = subprocess.run(
-            [_powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script)],
-            capture_output=True,
-            text=True,
-            timeout=180,
-            env=env,
-        )
-    finally:
-        script.unlink(missing_ok=True)
-    if completed.returncode != 0 or not out.is_file():
-        fail("formula recalculation failed", detail=(completed.stderr or completed.stdout).strip() or None)
+    staging = out.with_name(f"{out.name}.recalc-{os.getpid()}.xlsx")
+    report = _kit_call(["recalculate", "--input", str(input_path), "--output", str(staging)])
+    produced = Path(report.get("outputPath") or staging)
+    if not produced.is_file():
+        fail("the LibreOffice kit reported a recalculation but wrote no workbook")
+    os.replace(produced, out)
     cached = 0
     try:
         import openpyxl
@@ -1179,8 +1141,10 @@ try {{ $app.CalculateFull(); $wb.Save() }} finally {{ $wb.Close($true); $app.Qui
         "command": "recalc",
         "input": str(input_path),
         "output": str(out),
-        "renderer": f"{family}-office" if family == "microsoft" else "kingsoft-wps",
-        "executable": executable,
+        "renderer": "libreoffice-kit",
+        "engine": report.get("backend"),
+        "executable": find_kit()[1] if find_kit() else None,
+        "missing_fonts": [str(name) for name in report.get("missingFonts") or []],
         "cached_values": cached,
     }
 
@@ -1212,6 +1176,9 @@ def status() -> dict[str, Any]:
             packages.append({"package": name, "installed": True, "version": str(getattr(module, "__version__", ""))})
         except Exception as exc:
             packages.append({"package": name, "installed": False, "error": f"{type(exc).__name__}: {exc}"})
+    installed = {item["package"]: item["installed"] for item in packages}
+    kit = kit_report()
+    ready = bool(kit.get("available") and kit.get("backend"))
     return {
         "ok": True,
         "command": "status",
@@ -1220,23 +1187,14 @@ def status() -> dict[str, Any]:
         "platform": platform.platform(),
         "packages": packages,
         "renderers": {
-            "libreoffice": find_soffice(),
-            "microsoft_office": {
-                "word": _engine_path("docx", "microsoft"),
-                "powerpoint": _engine_path("pptx", "microsoft"),
-                "excel": _engine_path("xlsx", "microsoft"),
-            },
-            "kingsoft_wps": {
-                "writer": _engine_path("docx", "kingsoft"),
-                "presentation": _engine_path("pptx", "kingsoft"),
-                "spreadsheet": _engine_path("xlsx", "kingsoft"),
-            },
+            "kit": kit,
             "can_render": {
-                "docx": bool(office_engine("docx") or find_soffice()),
-                "pptx": bool(office_engine("pptx") or find_soffice()),
-                "xlsx": bool(office_engine("xlsx") or find_soffice()),
-                "pdf": True,
+                "docx": ready,
+                "pptx": ready,
+                "xlsx": ready,
+                "pdf": bool(installed.get("pymupdf")),
             },
+            "can_recalculate": {"xlsx": ready},
         },
     }
 
@@ -1266,6 +1224,8 @@ def main() -> None:
         render.add_argument("--out-dir", required=True)
         render.add_argument("--dpi", type=int, default=110)
         render.add_argument("--json-out")
+        if kind in {"docx", "pptx", "xlsx"}:
+            render.add_argument("--pdf", action="store_true", help="also export a PDF next to the page images")
 
         if kind == "xlsx":
             recalc = commands.add_parser("recalc")
@@ -1307,7 +1267,7 @@ def main() -> None:
             if args.format == "pdf":
                 result = pdf_render(input_path, out_dir, args.dpi)
             else:
-                result = render_office(input_path, args.format, out_dir, args.dpi)
+                result = render_office(input_path, args.format, out_dir, args.dpi, emit_pdf=bool(getattr(args, "pdf", False)))
         elif args.command == "recalc":
             result = xlsx_recalc(require_file(args.input), Path(args.out))
         else:

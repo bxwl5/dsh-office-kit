@@ -62,10 +62,10 @@ Render, look at every page, then deliver — in that order, with nothing skipped
 "<python>" "<skill>/container_tools/render_slides.py" --input "<file.pptx>" --out-dir "<render-dir>"
 ```
 
-`render_slides.py` uses the CLI's `pptx render` — which drives Microsoft
-PowerPoint, WPS Presentation, or LibreOffice, whichever is installed — and falls
-back to a draft preview when none is, so this one command is always the right
-entry point. The JSON names the engine it used in `engine`.
+`render_slides.py` uses the CLI's `pptx render` — which renders through the DSH
+LibreOffice kit — and falls back to a draft preview when the kit is missing, so
+this one command is always the right entry point. The JSON names the engine it
+used in `engine` (`libreoffice-kit` means a faithful render).
 
 Then open each PNG with `read_image` (or build one sheet with
 `"<skill>/template_following_scripts/make_contact_sheet.py"`). Check: titles
@@ -149,9 +149,10 @@ Guidance: [authoring workflow](references/authoring-workflow.md) ·
 
 ## Genuine gaps
 
-- No Microsoft Office, WPS Office, or LibreOffice installed → no true render;
-  use `--engine draft` and say the check was geometric. Installing any of them
-  fixes it.
+- The DSH LibreOffice kit missing (`renderers.can_render.pptx: false`) → no true
+  render; use `--engine draft` and say the check was geometric. Installing the
+  plugin inside the harness tree (or setting `DSH_LIBREOFFICE_KIT_CLI`) fixes it;
+  a standalone Office/LibreOffice install does not.
 - Fonts the user's machine lacks are substituted by any renderer; the pack
   cannot install fonts.
 - Google Slides import fidelity is out of our control; see

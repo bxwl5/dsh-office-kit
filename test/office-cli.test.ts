@@ -35,9 +35,15 @@ interface CliStatus {
   readonly plugin_version: string
   readonly packages: readonly { package: string, installed: boolean }[]
   readonly renderers: {
-    readonly libreoffice: string | null
-    readonly microsoft_office: { word: string | null, powerpoint: string | null, excel: string | null }
-    readonly kingsoft_wps: { writer: string | null, presentation: string | null, spreadsheet: string | null }
+    readonly kit: {
+      readonly available: boolean
+      readonly backend: string | null
+      readonly version: string | null
+      readonly error?: string
+      readonly remedy?: string
+    }
+    readonly can_render: { docx: boolean, pptx: boolean, xlsx: boolean, pdf: boolean }
+    readonly can_recalculate: { xlsx: boolean }
   }
 }
 
@@ -274,24 +280,51 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(existsSync(png)).toBe(true)
   })
 
-  it.runIf(isWindows && (status?.renderers.microsoft_office.excel != null || status?.renderers.kingsoft_wps.spreadsheet != null))('recalculates XLSX formulas through Excel or WPS', () => {
+  it.runIf(status?.renderers.can_recalculate.xlsx === true)('recalculates XLSX formulas through the LibreOffice kit', () => {
     const file = create('spreadsheets', '财务 模型-计算前')
     const out = join(directory, '财务 模型-计算后.xlsx')
-    expect(runCli(python!, ['xlsx', 'recalc', '--input', file, '--out', out]).ok).toBe(true)
+    const result = runCli(python!, ['xlsx', 'recalc', '--input', file, '--out', out])
+    expect(result.ok).toBe(true)
+    expect(result.renderer).toBe('libreoffice-kit')
+    expect(['native', 'wasm']).toContain(result.engine)
     const rows = (read('xlsx', out, true) as { sheets: { rows: unknown[][] }[] }).sheets[0].rows
     expect(rows[1][3]).toBe(40)
     expect(rows[3][1]).toBe(228)
-  })
+  }, 60_000)
 
-  it.runIf(status?.renderers.libreoffice != null || status?.renderers.microsoft_office.word != null || status?.renderers.kingsoft_wps.writer != null)('renders DOCX pages to PNG', () => {
+  it.runIf(status?.renderers.can_render.docx === true)('renders DOCX pages to PNG through the LibreOffice kit', () => {
     const file = create('documents', '季度 报告-渲染')
     const out = join(directory, 'render')
     const result = runCli(python!, ['docx', 'render', '--input', file, '--out-dir', out])
-    expect(['libreoffice', 'microsoft-office', 'kingsoft-wps']).toContain(result.renderer)
+    expect(result.renderer).toBe('libreoffice-kit')
+    expect(['native', 'wasm']).toContain(result.engine)
     expect(result.page_count).toBeGreaterThan(0)
+    expect(Array.isArray(result.missing_fonts)).toBe(true)
+    expect(typeof result.glyph_fallback).toBe('boolean')
+    expect(result.pages.length).toBe(result.page_count)
     const pages = readdirSync(out).filter(name => name.endsWith('.png'))
     expect(pages.length).toBe(result.page_count)
     for (const page of pages)
       expect(readFileSync(join(out, page)).byteLength).toBeGreaterThan(10_000)
+  }, 60_000)
+
+  it.runIf(status?.renderers.can_render.docx === true)('reports substituted fonts instead of silently producing tofu', () => {
+    const file = join(directory, '缺字体.docx')
+    const script = 'import sys\nfrom docx import Document\nd = Document()\nr = d.add_paragraph("fallback 缺字体").runs[0]\nr.font.name = "NoSuchFontXYZ"\nd.save(sys.argv[1])'
+    execFileSync(python!, ['-c', script, file])
+    const out = join(directory, 'render-fonts')
+    const result = runCli(python!, ['docx', 'render', '--input', file, '--out-dir', out])
+    expect(result.missing_fonts).toContain('NoSuchFontXYZ')
+    expect(result.glyph_fallback).toBe(true)
+    expect((result.warnings as string[]).join('\n')).toContain('NoSuchFontXYZ')
+  }, 60_000)
+})
+
+describe('renderer stack', () => {
+  it('never shells out to PowerShell, COM, or a system office binary', () => {
+    for (const relative of ['python/office_cli.py', 'src/index.ts']) {
+      const source = readFileSync(join(PACKAGE_ROOT, relative), 'utf8')
+      expect(source, relative).not.toMatch(/powershell|ComObject|KWps|Ket\.Application|soffice/iu)
+    }
   })
 })

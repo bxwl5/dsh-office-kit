@@ -1,9 +1,9 @@
 """Render a deck to PNGs, one per slide, using whatever engine is available.
 
-Purpose: the verification loop needs pixels. Ask the plugin CLI first: it drives
-Microsoft Office, WPS Office, or LibreOffice, whichever is installed. When none
-is, fall back to the draft geometry renderer in `preview_render.py` and say so
-loudly in the JSON — a draft preview proves placement, not typography.
+Purpose: the verification loop needs pixels. Ask the plugin CLI first: it renders
+through the DSH LibreOffice kit. When that is unavailable, fall back to the draft
+geometry renderer in `preview_render.py` and say so loudly in the JSON — a draft
+preview proves placement, not typography.
 
 Inputs may be a .pptx or a .pdf. Output is `<out-dir>/slide-NN.png` for every
 page, plus `<out-dir>/render.json`.
@@ -105,7 +105,7 @@ def render(input_path: str | Path, out_dir: str | Path, dpi: int = 110, engine: 
             notes.append(f"office render failed: {exc}")
 
     if engine == "office":
-        return {"ok": False, "engine": "office", "notes": notes, "error": {"code": "no_engine", "message": "no Microsoft Office, WPS Office, or LibreOffice renderer is available"}}
+        return {"ok": False, "engine": "office", "notes": notes, "error": {"code": "no_engine", "message": "the DSH LibreOffice renderer is not available (see office_status)"}}
 
     from preview_render import render_preview
 

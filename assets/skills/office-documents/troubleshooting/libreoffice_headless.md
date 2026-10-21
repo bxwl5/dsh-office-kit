@@ -6,31 +6,28 @@
 "<python>" "<cli>" status
 ```
 
-Look at `renderers.libreoffice` and `microsoft_office`. Both null means `docx render` will fail — not with a corrupt file, but with `no document renderer found`. That is a setup problem, not a document problem.
+Look at `renderers.kit` and `renderers.can_render`. `can_render.docx: false` means `docx render` will fail — not with a corrupt file, but with `the LibreOffice renderer is not available`. That is a setup problem, not a document problem.
 
-## LibreOffice
+## What renders
 
-Install LibreOffice (Windows: winget `TheDocumentFoundation.LibreOffice`), then check:
+Rendering goes through the LibreOffice kit that DeepSeek Harness ships (`@deepseek-ai/libreoffice-kit`). On macOS and Windows it uses the kit's native engine; on Linux it uses the WASM engine. A separately installed Microsoft Office, WPS Office, or system LibreOffice is **not** used and does not make rendering work on its own.
 
-```bash
-soffice --headless --version
-```
+The plugin finds the kit by walking up from its own directory through `node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js`. So:
 
-If the binary is not on `PATH`, the runtime cannot find it; either add its `program` directory to `PATH` or install into the default location the runtime probes. On Windows, `soffice.com` is the console wrapper — use that one, not `soffice.exe`, when a script needs to wait for exit.
-
-## Microsoft Office
-
-When Word is installed, the CLI can drive it through COM and does not need LibreOffice. Office must be activated and able to launch without a first-run dialog; a pending activation or a modal "sign in" blocks the render forever.
+- Installed inside the harness tree → the kit is found automatically.
+- Installed anywhere else → install the plugin where the harness can see its dependencies, or set `DSH_LIBREOFFICE_KIT_CLI` to the kit's `lib/cli.js`.
+- `DSH_NODE` overrides the node binary if `node` is not on `PATH`.
 
 ## Common failures
 
 | Message | Cause | Fix |
 |---|---|---|
-| `no document renderer found` | Neither installed / not on PATH | Install one, re-check `status` |
-| Render hangs | A dialog is waiting in the headless process | Kill the leftover process, add the `--headless --norestore` flags the CLI uses |
-| Blank pages | Missing font | Install the font or substitute it |
+| `the LibreOffice renderer is not available` | Kit not found from the plugin directory | Put the plugin inside the harness tree, or set `DSH_LIBREOFFICE_KIT_CLI` |
+| `cannot start the LibreOffice kit` / `EEXIST` | Interrupted install, or a stale staging directory | Re-run the plugin postinstall; delete leftover `.kit-render-*` directories |
+| `Unsupported LibreOfficeKit host` | Unsupported platform/arch (the kit ships Windows x64/arm64, macOS x64/arm64, Linux via WASM) | Render on a supported host |
+| `warning: N font(s) used by this file are not installed` | Font substitution — the render succeeded but that text may reflow or show boxes | Install the font or substitute it deliberately, then re-render |
+| Blank pages | Missing font | See the font warning above |
 | Text shifted | Font substitution | Compare with a render from the same renderer the user will use |
-| `soffice already running` | A user profile lock from a crashed run | Remove the stale lock file under the LibreOffice user profile, or wait for the old process to exit |
 
 ## Working without a renderer
 
@@ -38,7 +35,7 @@ Structure, text and metadata are all verifiable headlessly (`docx read`, the aud
 
 1. Do the structural verification.
 2. Tell the user that page layout was not visually checked, and why.
-3. Offer the install, or ask them to open the file and say what looks wrong.
+3. Ask them to fix the kit install, or open the file and say what looks wrong.
 
 Never describe a page you did not render.
 

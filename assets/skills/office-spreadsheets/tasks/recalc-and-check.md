@@ -10,9 +10,9 @@ every formula cell got a value and none of them is an error.
 "<python>" "<skill>/container_tools/recalc_gate.py" --input "<book-recalculated.xlsx>"
 ```
 
-- `recalc` needs a calculation engine on this host — Microsoft Excel or WPS
-  Spreadsheets, driven over COM. Without one the verb fails with a plain message
-  and changes nothing.
+- `recalc` needs the DSH LibreOffice kit (the same renderer used for images);
+  it runs on Windows, macOS and Linux. Without the kit the verb fails with a
+  plain message and changes nothing.
 - `recalc_gate.py` runs `recalc` for you when given `--cli`: it takes
   `--input`, writes `<stem>-recalculated.xlsx` unless `--out` is given, then
   scans every formula cell.
