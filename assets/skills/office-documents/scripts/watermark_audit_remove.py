@@ -1,8 +1,10 @@
 #!/usr/bin/env python
-"""Find and remove VML text watermarks from headers.
+"""Find and remove text watermarks from headers.
 
-A watermark that was meant for a draft can end up in a signed document, and it is
-invisible in text extraction because it lives in a shape, not in a paragraph run.
+Both DrawingML watermarks (what ``watermark_add.py`` writes) and legacy VML
+``v:textpath`` shapes are detected. A watermark that was meant for a draft can
+end up in a signed document, and it is invisible in text extraction because it
+lives in a shape, not in a paragraph run.
 
 Exit codes: 0 clean, 1 watermarks found (report mode), 2 bad input.
 """
@@ -25,7 +27,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Report or remove watermarks stored as VML shapes in headers.")
+    parser = argparse.ArgumentParser(description="Report or remove watermarks stored as DrawingML or VML shapes in headers.")
     parser.add_argument("input_docx", help="Input .docx")
     parser.add_argument("--mode", choices=("report", "remove"), default="report")
     parser.add_argument("--contains", default=None, help="Only match watermarks containing this text")

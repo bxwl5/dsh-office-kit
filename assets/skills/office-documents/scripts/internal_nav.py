@@ -131,8 +131,10 @@ def main(argv: list[str] | None = None) -> int:
         body.insert(position + offset, node)
 
     if not args.no_back_to_toc:
+        anchors = {entry["anchor"] for entry in headings}
         for paragraph_node in list(body.iter(kit.q("p"))):
-            if any(entry["anchor"] == name for entry in headings for name in (paragraph_node.find(kit.q("bookmarkStart")).get(kit.q("name")),) if paragraph_node.find(kit.q("bookmarkStart")) is not None):
+            start = paragraph_node.find(kit.q("bookmarkStart"))
+            if start is not None and start.get(kit.q("name")) in anchors:
                 back = paragraph("Caption")
                 back.append(link_run("Back to contents", TOC_BOOKMARK))
                 paragraph_node.addnext(back)

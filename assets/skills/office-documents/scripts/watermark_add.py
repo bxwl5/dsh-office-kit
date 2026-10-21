@@ -1,9 +1,10 @@
 #!/usr/bin/env python
-"""Add a diagonal text watermark to the page background.
+"""Add a text watermark to the page background.
 
-The watermark is a VML text shape in the default header, which is how Word has
-stored them since the 2007 file format: it survives conversion, prints on every
-page, and can be removed again by deleting the header shape.
+The watermark is a DrawingML text box in the default header: Word rotates it
+-45 degrees, while VML-only renderers that drop VML shapes still show the mark.
+It prints behind the body on every page and can be removed again by deleting
+the header paragraph.
 
 Exit codes: 0 success, 2 bad input.
 """
@@ -26,7 +27,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Add a VML text watermark to the document header.")
+    parser = argparse.ArgumentParser(description="Add a DrawingML text watermark to the document header.")
     parser.add_argument("input_docx", help="Input .docx")
     parser.add_argument("--out", required=True, help="Output .docx")
     parser.add_argument("--text", required=True, help="Watermark text, e.g. CONFIDENTIAL")

@@ -98,7 +98,11 @@ def fix_table(table, target: int) -> None:
     if not columns:
         columns = [1]
     total = sum(columns) or len(columns)
-    scaled = [max(1, round(target * value / total)) for value in columns]
+    scaled = [max(1, target * value // total) for value in columns]
+    remainder = target - sum(scaled)
+    order = sorted(range(len(columns)), key=lambda index: (target * columns[index]) % total, reverse=True)
+    for index in range(max(0, remainder)):
+        scaled[order[index % len(order)]] += 1
     grid = table.find(kit.q("tblGrid"))
     if grid is None:
         grid = etree.Element(kit.q("tblGrid"))
@@ -163,8 +167,14 @@ def main(argv: list[str] | None = None) -> int:
             fix_table(table, target)
         out = args.out or args.docx
         doc.save(out)
-        kit.emit({"ok": True, "fixed": True, "output": str(Path(out)), "tables": len(tables), "text_width": target, "findings": findings})
-        return 0
+        remaining = []
+        for index, info in enumerate((table_info(table) for table in tables), start=1):
+            if info["grid_total"] and info["grid_total"] > target:
+                remaining.append({"kind": "grid_wider_than_text", "table": index, "grid_total": info["grid_total"], "text_width": target})
+            if info["layout"] != "fixed":
+                remaining.append({"kind": "not_fixed_layout", "table": index})
+        kit.emit({"ok": not remaining, "fixed": True, "output": str(Path(out)), "tables": len(tables), "text_width": target, "findings": remaining})
+        return 0 if not remaining else 1
 
     kit.emit({"ok": not findings, "text_width": target, "tables": rows, "findings": findings})
     return 1 if findings else 0

@@ -58,7 +58,8 @@ def main(argv: list[str] | None = None) -> int:
     for index, paragraph in enumerate(doc.paragraphs(), start=1):
         text = kit.paragraph_text(paragraph).strip()
         level = kit.heading_level(paragraph)
-        if level == 0:
+        style = (kit.paragraph_style(paragraph) or "").strip().lower()
+        if style == "title":
             outline.append({"index": index, "style": "Title", "text": text})
             continue
         if level:
@@ -71,9 +72,7 @@ def main(argv: list[str] | None = None) -> int:
             if manual_heading(paragraph):
                 findings.append({"kind": "manual_formatting", "index": index, "text": text})
             previous = level
-        elif not text:
-            continue
-        elif manual_heading(paragraph) and len(text) <= 120:
+        elif text and manual_heading(paragraph) and len(text) <= 120:
             findings.append({"kind": "heading_not_styled", "index": index, "text": text})
 
     counts = {}

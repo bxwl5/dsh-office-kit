@@ -18,3 +18,5 @@ temp
 .python-path
 __pycache__
 *.pyc
+.dsh-tmp
+office-test
