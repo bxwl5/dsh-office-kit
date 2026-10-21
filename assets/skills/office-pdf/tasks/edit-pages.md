@@ -1,6 +1,6 @@
 # Merge, split, reorder, rotate, delete pages
 
-Pages are objects referenced from a page tree; changing the order or removing a page changes references, not content. Nothing is re-flowed, so a page moved into a document with a different page size keeps its own box and fonts.
+Pages are referenced from a page tree; reordering or removing one changes references, not content. Nothing is re-flowed, so a page moved into a differently sized document keeps its own box and fonts.
 
 ## Fast path: `scripts/page_ops.py`
 
@@ -9,14 +9,14 @@ Pages are objects referenced from a page tree; changing the order or removing a 
   --rotate 90 --pages 0,2 --remove 3 --merge "<other.pdf>" --order 2,0,1
 ```
 
-- Operations run in a fixed order: merge, then order, then remove, then rotate — a command means the same thing every time.
-- Every index is zero-based and addresses the combined page list (input pages first, appended pages after).
-- `--order` keeps and reorders; pages it does not list are dropped, which also makes it the duplicate/select tool when you repeat an index.
-- `--remove` drops indices from the list left by `--order`.
+- Fixed operation order: merge, then order, then remove, then rotate — a command always means the same thing.
+- Indices are zero-based over the combined page list (input pages first, appended pages after).
+- `--order` keeps and reorders; unlisted pages are dropped, and a repeated index duplicates it.
+- `--remove` drops indices from the list `--order` leaves.
 - `--rotate` takes 90, 180, or 270 clockwise and defaults to every remaining page; `--pages` limits it.
 - `--out` defaults to `<input>-edited.pdf`; the input is never overwritten.
 
-The script carries page content streams over as they are and reopens the result to report page count, rotation, and page size per page. When one call cannot express the operation, chain two calls into two output files rather than reusing a name.
+The script carries content streams over unchanged and reopens the result to report page count, rotation, and page size per page. When one call cannot express the operation, chain two calls into two output files rather than reusing a name.
 
 ## Metadata
 
@@ -24,7 +24,7 @@ The script carries page content streams over as they are and reopens the result 
 "<python>" "<skill>/scripts/metadata.py" --input "<file.pdf>" --set "/Title=Field report" --set "/Author=Ada" --out "<file-edited.pdf>"
 ```
 
-Keys are the document information fields (`Title`, `Author`, `Subject`, `Keywords`, `Creator`, `Producer`, `CreationDate`, `ModDate`), plain or `/Name`, in any case. The script writes a new file and reopens it, so `applied` and `not_applied` tell you what actually persisted.
+Keys are the document information fields (`Title`, `Author`, `Subject`, `Keywords`, `Creator`, `Producer`, `CreationDate`, `ModDate`), plain or `/Name`, in any case. The script writes a new file and reopens it; `applied`/`not_applied` show what persisted.
 
 ## Split
 
@@ -32,7 +32,7 @@ Keys are the document information fields (`Title`, `Author`, `Subject`, `Keyword
 "<python>" "<skill>/scripts/split_pages.py" --input "<file.pdf>" --out-dir "<parts>" --ranges "1-2,3,5-"
 ```
 
-1-based inclusive ranges, `--every N` for equal chunks, default one file per page. The script copies the source metadata, refuses overlapping or out-of-range ranges, and fails if the parts do not add up to the source page count — that check is what catches a typo in the range string. `--prefix` sets the filename stem.
+1-based inclusive ranges, or `--every N` for equal chunks; the default is one file per page. The script copies the source metadata, refuses overlapping or out-of-range ranges, and fails when the parts do not add up to the source page count — the check that catches a typo in the range string. `--prefix` sets the filename stem.
 
 ## Direct page-tree work
 
@@ -53,19 +53,19 @@ print("pages", len(writer.pages))
 PY
 ```
 
-`add_page` copies the page and its resources into the new file; annotations that point across pages (links) can break when their target is removed. After a reorder or deletion, check the links and bookmarks on the render, not only the text.
+`add_page` copies the page and its resources; annotations pointing across pages (links) can break when their target is removed. After a reorder or deletion, check links and bookmarks on the render, not only the text.
 
 ## Rotate
 
-Page rotation is a `/Rotate` entry (multiples of 90) applied by viewers; it does not transpose the content stream. `page.rotate(90)` in pypdf, or `page_ops.py --rotate 90 --pages ...`, is enough. If a page was scanned sideways and also carries a stale `/Rotate`, the two add up — the render shows whether you are looking at the wrong one, and `scripts/render_pages.py` reports each page's rotation.
+Page `/Rotate` (multiples of 90) is applied by viewers and does not transpose the content stream. `page.rotate(90)` in pypdf, or `page_ops.py --rotate 90 --pages ...`, is enough. A page scanned sideways that also carries a stale `/Rotate` accumulates both — the render shows which one you are looking at, and `scripts/render_pages.py` reports each page's rotation.
 
 ## Verify
 
 After any structural edit:
 
 - compare page counts (`pdf read` or the split report) — one missing page is easy to miss in a long render;
-- render at least the first and last page of every part, and every page you rotated or reordered;
-- for merges, confirm the page size and orientation of the appended pages did not change, and that page numbers or bates stamps do not collide;
-- for deletions of numbered pages, tell the user which numbers were removed, because the remaining page labels will shift.
+- render the first and last page of every part, plus every page you rotated or reordered;
+- for merges, confirm appended pages kept their size and orientation, and that page numbers or bates stamps do not collide;
+- for deletions of numbered pages, tell the user which numbers were removed, because the remaining page labels shift.
 
-`scripts/render_pages.py --input "<file.pdf>" --region 0,0,1,1 --json-out ...` prints per-page character and drawing counts, which is a cheap way to confirm a page is not blank before you deliver.
+`scripts/render_pages.py --input "<file.pdf>" --region 0,0,1,1 --json-out ...` prints per-page character and drawing counts — a cheap blank-page check before delivery.

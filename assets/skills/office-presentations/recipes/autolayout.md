@@ -2,19 +2,18 @@
 
 ## Mechanics
 
-PowerPoint has two different "autofit" ideas and mixing them up wastes a round
-trip:
+PowerPoint has two "autofit" ideas; mixing them up wastes a round trip:
 
 - `word_wrap` decides whether text wraps inside the width. Turn it on for every
   authored box.
 - `auto_size` decides whether the *frame* follows the text (`MSO_AUTO_SIZE.
   SHAPE_TO_FIT_TEXT`) or the text shrinks to fit the frame
   (`TEXT_TO_FIT_SHAPE`). `TEXT_TO_FIT_SHAPE` is a **render-time** behaviour:
-  PowerPoint recalculates it when the file is opened, so a deck that looks fine
-  in a draft preview can still shrink to 8 pt on a real screen.
+  PowerPoint recalculates it when the file opens, so a deck that looks fine in a
+  draft preview can still shrink to 8 pt on a real screen.
 
-The reliable pattern is: fixed frame, explicit sizes, content measured against
-the frame, no text-to-fit. Estimate, then verify by rendering.
+The reliable pattern: fixed frame, explicit sizes, content measured against the
+frame, no text-to-fit. Estimate, then verify by rendering.
 
 ## Recipe: fit a variable number of bullets
 
@@ -66,7 +65,7 @@ PY
 ## Rules that hold regardless of content
 
 1. Body text is 18 pt or larger; below that the back row cannot read it.
-2. Six bullets or three lines of body is the point where a slide should split.
+2. Six bullets or three lines of body is where a slide should split.
 3. Longer text shrinks the number of *words*, not the type size. If the fit loop
    lands below the body floor, cut copy or split the slide.
 4. Keep 0.5 in of bottom margin for the footer and for projectors that crop.
@@ -77,12 +76,12 @@ PY
 - `frame.text` then `paragraph.font.size` on paragraph 0 only: a multi-paragraph
   assignment leaves paragraphs 1..n at the inherited 18 pt.
 - Text-to-fit hiding the overflow: the file opens fine and the audience reads
-  9 pt. Measure, do not delegate the fit to the renderer.
-- A frame height that exactly equals the text height: one extra word on edit and
-  the block runs into the evidence below. Reserve 10% slack.
+  9 pt. Measure; do not delegate the fit to the renderer.
+- A frame height exactly equal to the text height: one extra word on edit and the
+  block runs into the evidence below. Reserve 10% slack.
 
 ## CLI fast path
 
-`pptx create` with `layout: "bullets"` fills the layout's body placeholder at
-its own size. Use the loop above when the number of bullets is not known before
-the content is written.
+`pptx create` with `layout: "bullets"` fills the layout's body placeholder at its
+own size. Use the loop above when the number of bullets is unknown before the
+content is written.

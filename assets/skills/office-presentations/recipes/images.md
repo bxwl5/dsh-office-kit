@@ -4,13 +4,13 @@
 
 `add_picture(path, left, top, width=…, height=…)`:
 
-- Give **width only** and the height follows the aspect ratio. Give both and
-  the picture is stretched — a deliberate choice for a full-bleed background,
-  a mistake for a product photo.
+- Give **width only** and the height follows the aspect ratio. Give both and the
+  picture stretches — deliberate for a full-bleed background, a mistake for a
+  product photo.
 - `picture.crop_left/right/top/bottom` are fractions of the *source*; they crop
   without changing the frame, which is how a "cover" fit is done.
-- The bytes live in `ppt/media/`; the same file added twice is stored once,
-  keyed by content hash.
+- The bytes live in `ppt/media/`; the same file added twice is stored once, keyed
+  by content hash.
 - `picture._element.nvPicPr.cNvPr.set("descr", "…")` is the alt text. Decks get
   read aloud and exported; an untagged picture is an empty sentence.
 
@@ -57,11 +57,10 @@ PY
 ## Rules
 
 1. Never upscale past the source resolution: a 900 px wide image at 8 in is
-   ~110 ppi and will look soft on a projector. Check `Image.open(...).size`.
-2. One dominant image per slide. A slide with a hero and three thumbnails is two
-   slides.
-3. Full-bleed backgrounds need text contrast handled deliberately — a dark
-   scrim rectangle between picture and text, not hope.
+   ~110 ppi and looks soft on a projector. Check `Image.open(...).size`.
+2. One dominant image per slide. A hero plus three thumbnails is two slides.
+3. Full-bleed backgrounds need deliberate text contrast — a dark scrim rectangle
+   between picture and text, not hope.
 4. Alt text on every picture, in the language of the deck.
 
 ## Pitfalls this avoids
@@ -70,8 +69,8 @@ PY
   name as the cause.
 - `add_picture` after the text: the picture covers the words. Add backgrounds
   first, or move them to index 2.
-- Re-using a screenshot of a chart or a table as "evidence": it is unreadable at
-  projector size and unverifiable. Use a native chart or table.
+- Re-using a screenshot of a chart or table as "evidence": unreadable at
+  projector size, unverifiable. Use a native chart or table.
 
 ## CLI fast path
 

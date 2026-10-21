@@ -5,7 +5,7 @@ The file is the specification. Read its conventions before writing a cell, then 
 ## Procedure
 
 1. `"<python>" "<cli>" xlsx read --input "<book.xlsx>" --json-out "<dump>.json"` — every sheet, its used range, and its formulas.
-2. `"<python>" "<skill>/container_tools/inspect_workbook.py" --input "<book.xlsx>"` — what the read verb does not show: merged ranges, conditional formatting, defined names, Excel Tables, charts and their series, freeze panes, protections. It prints JSON; `--no-values` skips the second load that looks for cached results.
+2. `"<python>" "<skill>/container_tools/inspect_workbook.py" --input "<book.xlsx>"` — what the read verb hides: merged ranges, conditional formatting, defined names, Excel Tables, charts and their series, freeze panes, protections. It prints JSON; `--no-values` skips the second load that looks for cached results.
 3. Render the sheets you are about to touch and look at them: `xlsx render`, then `read_image`. Match the surrounding format, not your personal default.
 4. Apply the edit with the narrowest tool that fits (below), or with an openpyxl snippet when the change is not one of those shapes.
 5. Read back and re-check structure, recalculate if formulas changed, render again, compare.
@@ -24,11 +24,11 @@ There is no `xlsx edit` verb. Each tool loads the workbook, changes only what yo
 | Add a native chart | `add_chart.py --input "<book.xlsx>" --sheet Trend --type line --title "Monthly revenue (USD)" --anchor A6 --data-min-col 2 --data-min-row 3 --data-max-col 13 --data-max-row 3 --cat-min-row 2 --cat-max-row 2` |
 | Embed an image | `add_image.py --input "<book.xlsx>" --sheet Cover --path logo.png --anchor B2 --width 320` |
 
-Each tool writes `<input>-edited.xlsx` unless you pass `--out`, so chain by naming outputs, never by editing the file you just read and forgetting the step in between.
+Each tool writes `<input>-edited.xlsx` unless you pass `--out`, so chain by naming outputs — never edit the file you just read and lose the step in between.
 
 `cells.json` is `{"sheet": "Model", "cells": {"B3": 0.07, "D9": "=SUM(D2:D8)"}}` or a list of those. `styles.json` is `{"sheet": "Model", "styles": {"A11:B11": {"bold": true}, "C11:C14": {"number_format": "0.0%"}}}`.
 
-Two tool limits are deliberate: `append_rows.py` does not extend an Excel Table, copy the formula from the row above, or grow a chart — do those with a snippet from `recipes/data-tables.md` and `recipes/charts.md`, or the new rows will sit outside the table and the chart will stop at the old last row. `add_chart.py` treats a one-row data range as one series of many points (which is what a monthly row means) but cannot set axis number formats or series colours; fix those in the same snippet.
+Two tool limits are deliberate: `append_rows.py` does not extend an Excel Table, copy the formula from the row above, or grow a chart — use a snippet from `recipes/data-tables.md` and `recipes/charts.md`, or the new rows sit outside the table and the chart stops at the old last row. `add_chart.py` treats a one-row data range as one series of many points (what a monthly row means) but cannot set axis number formats or series colours; fix those in the same snippet.
 
 ## What must survive an edit
 
@@ -48,7 +48,7 @@ New conditional formatting that covers a whole table must extend to the rows you
 ## Cells: the smallest change
 
 - Write to the sheet and address you resolved; never "the first empty row" of an unnamed sheet.
-- A text edit changes run-level text only in a cell; the format stays unless the request names it.
+- A text edit changes run-level text only; the cell format stays unless the request names it.
 - A number-format change is a format change, not a value change: do not replace `0.0649` with `6.5%` text.
 - Do not autofit every column or restyle a table to fix one clipped cell. Widen the column, or shrink the font only for that block.
 - Do not add spacer rows, helper sheets, or "Notes" tabs unless the request needs them.
@@ -66,4 +66,4 @@ If `xlsx read` shows `#REF!`, `#DIV/0!`, or a formula pointing at a sheet that n
 "<python>" "<cli>" xlsx render --input "<book-edited.xlsx>" --out-dir "<render-dir>"
 ```
 
-The diff is the closest thing to a guarantee that nothing else moved: it reports changed cells and formulas, changed formatting unless you pass `--no-formats`, and structure changes (sheets, merges, widths, tables, charts, defined names). Exit code `1` means differences — not failure. Use `--sheet` to narrow and `--limit` to cap the per-sheet cell list.
+The diff is the closest thing to a guarantee that nothing else moved: it reports changed cells and formulas, changed formatting unless you pass `--no-formats`, and structure changes (sheets, merges, widths, tables, charts, defined names). Exit code `1` means differences — not failure. Use `--sheet` to narrow and `--limit` to cap the per-sheet cell list. Gate flags and exit codes: `tasks/recalc-and-check.md`.

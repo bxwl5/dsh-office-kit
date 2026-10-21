@@ -19,9 +19,7 @@ word/comments.xml, footnotes.xml, endnotes.xml   optional
 
 ## The body
 
-`word/document.xml` is a sequence of block-level elements: `w:p` (paragraph), `w:tbl` (table), `w:sdt` (content control), and finally one `w:sectPr` per section (the last one sits in the body, earlier ones inside a paragraph's `pPr`).
-
-A paragraph is:
+`word/document.xml` is a sequence of block elements — `w:p` (paragraph), `w:tbl` (table), `w:sdt` (content control) — plus one `w:sectPr` per section: the last sits in the body, earlier ones inside a paragraph's `pPr`.
 
 ```xml
 <w:p>
@@ -39,9 +37,9 @@ A paragraph is:
 </w:p>
 ```
 
-Everything a reader sees is a run inside a paragraph; everything that makes it look different from its style is direct formatting in `pPr`/`rPr`. Direct formatting is why `style_normalize.py` exists.
+Everything a reader sees is a run inside a paragraph; everything that makes it differ from its style is direct formatting in `pPr`/`rPr`, which is why `style_normalize.py` exists (`tasks/style_lint_normalize.md`).
 
-A table is `w:tbl` > `w:tblPr` (style, width, layout) + `w:tblGrid` (column widths) + `w:tr` > `w:tc` > `w:p`. A cell always contains at least one paragraph.
+A table is `w:tbl` > `w:tblPr` (style, width, layout) + `w:tblGrid` (column widths) + `w:tr` > `w:tc` > `w:p`. Every cell holds at least one paragraph.
 
 ## Units
 
@@ -52,31 +50,31 @@ A table is `w:tbl` > `w:tblPr` (style, width, layout) + `w:tblGrid` (column widt
 | eighth-point | border widths (`w:sz` on borders) | 8 per point |
 | EMU (914400/in) | drawing extents | 914400 per inch |
 
-A Letter page is 12240×15840 twips. Text width = page width − left − right margins (default 9360 twips with 1in margins).
+A Letter page is 12240×15840 twips. Text width = page width − left − right margins (9360 twips at 1in margins).
 
 ## Styles
 
-`w:style` with `w:type` of `paragraph`, `character`, `table` or `numbering`. Attributes: `w:styleId` (the internal name), `w:name` (the UI name), `w:basedOn`, `w:next`, `w:link`, plus `w:pPr`/`w:rPr`.
+`w:style` with `w:type` of `paragraph`, `character`, `table` or `numbering`; attributes `w:styleId` (internal name), `w:name` (UI name), `w:basedOn`, `w:next`, `w:link`, plus `w:pPr` / `w:rPr`.
 
-- `Normal` is the root; `Heading1`..`Heading9` drive the outline level and the TOC.
-- Outline level can also be set explicitly with `w:outlineLvl` (0-based) in `pPr`; a paragraph can look like a heading without being one, and the TOC will not see it.
+- `Normal` is the root; `Heading1`..`Heading9` drive outline level and the TOC.
+- `w:outlineLvl` (0-based) in `pPr` sets an outline level explicitly: a paragraph can look like a heading without being one, and the TOC will not see it.
 - Latent styles do not exist in the file until used; a document may reference `Heading3` while `styles.xml` has no definition for it.
 
 ## Numbering
 
-`word/numbering.xml` holds `w:abstractNum` (the list definition, per level: format, text, indentation) and `w:num` (`w:numId` → `w:abstractNumId`, optionally overridden). A paragraph joins a list with `w:numPr` referencing a `numId`. Two paragraphs with the same `numId` share a counter.
+`word/numbering.xml` holds `w:abstractNum` (list definition: per level its format, text and indentation) and `w:num` (`w:numId` → `w:abstractNumId`, optionally overridden). A paragraph joins a list with `w:numPr` referencing a `numId`; two paragraphs with the same `numId` share a counter.
 
 ## Sections
 
-`w:sectPr` carries page size (`w:pgSz`), margins (`w:pgMar`), orientation (implied by width vs height, or `w:orient`), columns, and the header/footer references. A document with one section has one `sectPr`; a new section is a paragraph whose `pPr` contains the *previous* section's `sectPr`.
+`w:sectPr` carries page size (`w:pgSz`), margins (`w:pgMar`), orientation (implied by width vs height, or `w:orient`), columns and header/footer references. A single-section document has one `sectPr`; a new section is a paragraph whose `pPr` contains the *previous* section's `sectPr`.
 
 ## Fields
 
-Simple (`w:fldSimple`) and complex (`fldChar` begin/separate/end with `w:instrText`). The visible text is a cache. `w:updateFields` in `settings.xml` asks the editor to refresh on open. See `ooxml/hyperlinks_and_fields.md`.
+Simple (`w:fldSimple`) and complex (`fldChar` begin/separate/end with `w:instrText`). The visible text is a cache; `w:updateFields` in `settings.xml` asks the editor to refresh on open. See `ooxml/hyperlinks_and_fields.md`.
 
 ## Revision markup
 
-`w:ins`, `w:del` (with `w:delText`), `w:moveFrom`/`w:moveTo`, `w:rPrChange`/`w:pPrChange`, each with author and date. See `ooxml/tracked_changes.md`.
+`w:ins`, `w:del` (with `w:delText`), `w:moveFrom` / `w:moveTo`, `w:rPrChange` / `w:pPrChange`, each with author and date. See `ooxml/tracked_changes.md`.
 
 ## Minimum valid package
 

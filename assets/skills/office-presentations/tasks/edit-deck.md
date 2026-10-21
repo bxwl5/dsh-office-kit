@@ -2,7 +2,7 @@
 
 Editing is mutation, and mutation lives in this pack's tools, not in the helper
 CLI: `container_tools/replace_text.py`, `add_slides.py`, `core_properties.py`,
-plus the recipes for everything structural.
+plus the recipes for anything structural.
 
 **Never write over the original.** Every tool defaults to
 `<original>-edited.pptx`; keep that default unless the user names a path.
@@ -14,9 +14,8 @@ plus the recipes for everything structural.
 "<python>" "<skill>/container_tools/inspect_presentation_layout_geometry.py" --input deck.pptx
 ```
 
-`pptx read` gives titles, text, tables and chart data per slide. The geometry
-gate gives every shape's rect in inches, which is what you need to decide
-whether a new block fits.
+`pptx read` gives titles, text, tables and chart data per slide; the geometry
+gate gives every shape's rect in inches, to decide whether a new block fits.
 
 ## 2. Text changes: run-level replace
 
@@ -41,11 +40,11 @@ Batch form:
 "<python>" "<skill>/container_tools/replace_text.py" --input deck.pptx --spec replacements.json
 ```
 
-Semantics that matter: a pattern only matches **inside a single run**. Text that
-PowerPoint split for formatting ("**Q4** 2025") will not match "Q4 2025" and the
-report lists it under `unmatched`. When a pattern cannot match, that is the
-signal to edit that paragraph with a run-level snippet
-([rich text runs](../recipes/rich-text-runs.md)) rather than widening the match.
+A pattern matches **inside a single run** only. Text PowerPoint split for
+formatting ("**Q4** 2025") will not match "Q4 2025" and the report lists it under
+`unmatched`. When a pattern cannot match, edit that paragraph with a run-level
+snippet ([rich text runs](../recipes/rich-text-runs.md)) rather than widening the
+match.
 
 Exit code 1 means a pattern matched nothing; the file is still written, so read
 `unmatched` before delivering.
@@ -56,10 +55,9 @@ Exit code 1 means a pattern matched nothing; the file is still written, so read
 "<python>" "<skill>/container_tools/add_slides.py" --input deck.pptx --spec extra-slides.json
 ```
 
-The spec is the same slide object as `pptx create` (`layout`, `title`,
-`subtitle`, `bullets`, `table`, `chart`, `image`). For anything outside that
-vocabulary, add the slide with `add_slides.py` and then place content with a
-recipe.
+The spec uses the same slide object as `pptx create` (`layout`, `title`,
+`subtitle`, `bullets`, `table`, `chart`, `image`). Outside that vocabulary, add
+the slide with `add_slides.py`, then place content with a recipe.
 
 ## 4. Metadata
 
@@ -72,7 +70,7 @@ recipe.
 
 | Change | Route |
 |---|---|
-| Move or resize a shape | recipe: set `.left/.top/.width/.height` on the shape from `slide.shapes` |
+| Move or resize a shape | set `.left/.top/.width/.height` from `slide.shapes` |
 | Restyle a family | [masters and layouts](../recipes/master-and-layouts.md) |
 | Add notes | [speaker notes](../recipes/speaker-notes.md) |
 | Replace a chart's data | [native charts](../recipes/native-charts.md) — edit the series, do not paste a picture |
@@ -89,5 +87,5 @@ relational:
 "<python>" "<skill>/container_tools/render_slides.py" --input deck-edited.pptx --out-dir preview
 ```
 
-Then look at the changed pages. A text replacement that pushes a title onto a
-third line is a layout change, not a text change.
+Then look at the changed pages. A replacement that pushes a title onto a third
+line is a layout change, not a text change.

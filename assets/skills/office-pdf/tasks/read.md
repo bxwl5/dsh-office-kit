@@ -1,6 +1,6 @@
 # Read text, tables, and page images
 
-Text extraction reads the page content stream: glyph runs carry position and a font, and a library groups them into words and lines. A page with no text operators (a scan or a photo export) yields nothing no matter which extractor is used — that is a property of the file, not of the tool.
+Extraction reads the page content stream; glyph runs carry position and font, which a library groups into words and lines. A page without text operators (a scan, a photo export) yields nothing, whatever the extractor — a property of the file, not of the tool.
 
 ## Fast path: plain text and structure
 
@@ -16,7 +16,7 @@ Returns `page_count`, `word_count`, document metadata, per-page text (with chara
 "<python>" "<skill>/scripts/extract_text.py" --input "<file.pdf>" --json-out "<tables.json>"
 ```
 
-Each page reports its characters and detected tables as rows of cell strings. The detection uses the page's ruling lines and word spacing, so a borderless table often comes back as running text; `--layout` keeps the spacing of the original lines for a manual look.
+Detection uses the page's ruling lines and word spacing, so a borderless table often comes back as running text; `--layout` keeps the original line spacing for a manual look.
 
 When the detection looks wrong, inspect rather than guess:
 
@@ -32,11 +32,11 @@ with pdfplumber.open("in.pdf") as pdf:
 PY
 ```
 
-`chars`, `lines`, and `rects` tell you whether the table has rules at all. A table with no lines is best read from `extract_text` with `--layout`, where the column gaps survive as spaces.
+`chars`, `lines`, and `rects` tell you whether the table has rules at all. With no lines, read it from `extract_text` with `--layout`, where column gaps survive as spaces.
 
 ## Page images
 
-A page may contain embedded rasters that are invisible in text extraction. List them with PyMuPDF:
+A page may embed rasters that text extraction does not show. List them with PyMuPDF:
 
 ```bash
 "<python>" - <<'PY'
@@ -48,15 +48,15 @@ for number, page in enumerate(doc, 1):
 PY
 ```
 
-Extract one with `page.get_pixmap(clip=...)` or `doc.extract_image(xref)` when the user needs the picture itself. Rendering the page at 150–200 dpi and cropping with `read_image` is the reliable way to *see* it.
+Extract one with `page.get_pixmap(clip=...)` or `doc.extract_image(xref)` when the user needs the picture itself. To *see* it, render the page at 150–200 dpi and crop with `read_image`.
 
 ## What fails and how to resolve it
 
-- **Scanned page, no text**: there is no text layer to read. Say so; the render shows the image of the words. Resolutions: work from a text-based copy of the file, or read the pages visually and type the content into a rebuild. Do not claim extraction succeeded on an empty result.
-- **Empty string from a page that shows text**: the page may use a font with a broken ToUnicode map, or the text may be drawn as vector outlines. Check the render before concluding; if it is outlines, extraction cannot recover the words.
-- **Wrong reading order in multi-column layouts**: raw extraction follows the operator order. Crop each column with a rect and extract per column, `get_textbox(rect)` on a PyMuPDF page is the simplest split.
+- **Scanned page, no text**: no text layer exists; say so, with resolutions from `references/limits.md`. Never claim extraction succeeded on an empty result.
+- **Empty string from a page that shows text**: broken ToUnicode map, or text drawn as vector outlines. Check the render; outlines cannot be recovered by extraction.
+- **Wrong reading order in multi-column layouts**: extraction follows operator order. Crop each column with a rect and extract per column; `get_textbox(rect)` on a PyMuPDF page is the simplest split.
 - **Ligatures and soft hyphens**: extraction may glue or split words; quote extracted text only after reading the same passage on the render.
 
 ## Verify
 
-Rendering the page is the check for every extraction: the characters you return must be visible in that image. Watch for a page whose extracted text is suspiciously short (a missing text layer), duplicated (headers repeated per page), or full of replacement glyphs (broken encoding) before you build anything on top of it.
+The render is the check: the characters you return must be visible in it. Before building on extracted text, check for a page whose text is suspiciously short (missing text layer), duplicated (headers repeated per page), or full of replacement glyphs (broken encoding).

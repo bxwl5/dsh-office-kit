@@ -1,6 +1,6 @@
 # Resolve an `office-annotations` region on a PDF
 
-`page` is the 1-based page of the file, and `region × page.rect` is the real rectangle in the page's coordinate system. Convert once; then everything you do — read, redact, stamp, fill — uses that rect.
+`page` is the 1-based page of the file, and `region × page.rect` is the real rectangle in the page's coordinate system. Convert once; then every operation — read, redact, stamp, fill — uses that rect.
 
 ## 1. Reproduce the page first
 
@@ -8,7 +8,7 @@
 "<python>" "<cli>" pdf render --input "<file.pdf>" --out-dir "<render>" --dpi 110
 ```
 
-Open `"<render>/page-<N>.png"` with `read_image`. The geometry is only meaningful against the page the user saw, so never resolve a region on a page you have not rendered.
+Open `"<render>/page-<N>.png"` with `read_image`. Geometry is only meaningful against the page the user saw, so never resolve a region on a page you have not rendered.
 
 ## 2. Convert the region and read what it covers
 
@@ -43,7 +43,7 @@ Compare the words with the annotation's `text`. If `text` is present and those w
 | A single word or sentence to change | redact the old line, then stamp the new text (below) |
 | A picture to replace | overlay a cover rect and draw the new image with reportlab |
 
-A requirement like "make this sentence shorter" is a content edit; do not rebuild the whole page for it when the block is one line.
+A requirement like "make this sentence shorter" is a content edit; do not rebuild the whole page when the block is one line.
 
 ## 4. Patch one line in place
 
@@ -91,8 +91,8 @@ Line height and font size must match the original text; read them from the origi
 
 ## 5. When the payload cannot be tied to an object
 
-Say which part you could not locate: the render page, the words you found under the region, and the item that is missing. Then ask for the text of the target or a clearer region. Genuinely blocked cases and their resolutions are in `references/limits.md` — name the missing capability and what the user can do about it, never a bare "unsupported".
+Say which part you could not locate — render page, the words found under the region, the missing item — and ask for the target text or a clearer region. Blocked cases are in `references/limits.md`: name the missing capability and the way out, never a bare "unsupported".
 
 ## 6. Re-render and confirm
 
-Apply the edit, render the same page, and `read_image` it again. The region must show the requested result, the neighbouring text must be untouched, and the layout must still hold. Then check extraction (`pdf read`) so the change is real in the text layer, not only in pixels. Report what you resolved back to the user in the same terms they annotated with: page number and a one-line description of the change.
+Apply the edit, render the same page, and `read_image` it again: the region must show the requested result, neighbouring text must be untouched, and the layout must hold. Then confirm with `pdf read` that the change is in the text layer, not only in pixels. Report in the user's own terms: page number plus a one-line description of the change.

@@ -40,9 +40,9 @@
 
 ## Order of work
 
-1. Sketch the sheets as roles, not tabs: inputs, calculations, outputs, checks. A five-line model belongs on one sheet with labelled blocks.
-2. Put the number formats on the cells, not on a copy of the values. `#,##0` for currency-ish amounts, `0.0%` for percentages, `yyyy-mm-dd` for real dates.
-3. Write the calculation as visible steps (quantity × rate, opening + movements = closing) and link the output to the build rather than repeating the arithmetic.
+1. Sketch sheets as roles, not tabs: inputs, calculations, outputs, checks. A five-line model belongs on one sheet with labelled blocks.
+2. Put number formats on the cells, not on a copy of the values. `#,##0` for currency-ish amounts, `0.0%` for percentages, `yyyy-mm-dd` for real dates.
+3. Write calculations as visible steps (quantity × rate, opening + movements = closing) and link the output to the build rather than repeating the arithmetic.
 4. Add a chart only when it answers a comparison question the numbers alone answer slowly; see `references/charts.md`.
 5. Render and read the PNG, then recalc if formulas exist.
 
@@ -60,7 +60,7 @@
 ## Pitfalls
 
 - Values written through the CLI keep their type: `1840000` is a number, `"1,840,000"` is text and will not sum. Format numbers, never pre-format them as strings.
-- A chart whose `max_row` is larger than the data plots empty points as zero, which reads as a collapse to the floor. Match the range to the data.
-- `anchor` is where the chart's top-left corner sits; a chart outside the print area gets cut off by `xlsx render`. Put it below or beside the data inside the printed range.
+- A chart whose `max_row` exceeds the data plots empty points as zero, which reads as a collapse to the floor. Match the range to the data.
+- `anchor` is where the chart's top-left corner sits; a chart outside the print area gets cut off by `xlsx render`. Put it below or beside the data, inside the printed range.
 - Dates must be real dates (`date(2026, 1, 31)` via a snippet, or Excel serial numbers), never `"Jan-26"` strings, or period filters fail silently.
 - Set the font family explicitly if the file will be opened on another machine; a missing Calibri falls back to a serif in some renderers and every column width shifts.

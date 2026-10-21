@@ -9,11 +9,11 @@ replaces every run, so **format runs, never paragraphs**:
 - `paragraph.text = "x"` — one run, all previous formatting gone.
 - `run = paragraph.add_run(); run.text = "x"; run.font.bold = True` — formatting
   survives and can differ inside the paragraph.
-- `paragraph.font.size` is not a thing PowerPoint respects for mixed content; it
+- `paragraph.font.size` is not something PowerPoint respects for mixed content; it
   sets the default for later runs only. Set the size on every run you add.
 
-Paragraph-level properties (`alignment`, `level`, `space_after`,
-`line_spacing`) apply to the whole paragraph and are safe to set once.
+Paragraph-level properties (`alignment`, `level`, `space_after`, `line_spacing`)
+apply to the whole paragraph and are safe to set once.
 
 ## Recipe
 
@@ -62,22 +62,22 @@ PY
 
 ## Rules
 
-1. A number you want the reader to remember gets its own run, and usually a
-   weight change — not a second bullet.
+1. A number the reader should remember gets its own run, usually with a weight
+   change — not a second bullet.
 2. Superscripts, footnote markers and unit symbols are runs, not characters
    smuggled into the sentence.
-3. Keep one family of emphasis per deck: bold+accent for numbers, italic+muted
-   for provenance. Three competing emphases read as decoration.
-4. Strings that repeat (units, currency, product names) belong in a variable so
-   a later edit does not leave two spellings.
+3. One family of emphasis per deck: bold+accent for numbers, italic+muted for
+   provenance. Three competing emphases read as decoration.
+4. Repeated strings (units, currency, product names) belong in a variable so a
+   later edit does not leave two spellings.
 
 ## Pitfalls this avoids
 
 - `paragraph.text = "Total: "` then `add_run()`: the first assignment already
-  replaced the frame's runs, so formatting set beforehand is gone.
-- A run with no `font.size` inherits the layout's size, which is 44 pt on a
-  title layout — footnote markers become headlines.
-- Building the paragraph by f-string with `**` markers that PowerPoint does not
+  replaced the frame's runs, so earlier formatting is gone.
+- A run with no `font.size` inherits the layout's size, which is 44 pt on a title
+  layout — footnote markers become headlines.
+- Building the paragraph by f-string with `**` markers PowerPoint does not
   interpret; markup in a deck is a run, not a syntax.
 
 ## CLI fast path

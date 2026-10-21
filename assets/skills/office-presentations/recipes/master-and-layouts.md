@@ -2,15 +2,15 @@
 
 ## Mechanics
 
-A deck has three levels, and where you make a change decides how many slides it
+A deck has three levels; where you make a change decides how many slides it
 fixes:
 
-- **Slide master** (`ppt/slideMasters/`) — theme fonts, colours, background,
-  and the shapes every slide inherits (title bar, accent rule, logo).
+- **Slide master** (`ppt/slideMasters/`) — theme fonts, colours, background, and
+  the shapes every slide inherits (title bar, accent rule, logo).
 - **Slide layout** (`ppt/slideLayouts/`) — one per slide family (title, title and
   content, section, blank…), each with named placeholders at fixed rects.
-- **Slide** — holds its own shapes plus *placeholder overrides*: text, and also
-  position, if someone dragged a placeholder.
+- **Slide** — its own shapes plus *placeholder overrides*: text, and position if
+  someone dragged a placeholder.
 
 Editing a placeholder's *text* is a per-slide change. Editing the layout's
 placeholder *rect* moves that frame on every slide of that family. Editing the
@@ -20,9 +20,9 @@ master's background moves it everywhere.
 To change a slide's family, delete it and add a new one from the target layout —
 losing its content, so plan families before filling them.
 
-**One quirk to know:** `master.shapes` and `layout.shapes` are read-only in
-`python-pptx` (`MasterShapes` has no `add_shape`). Chrome shapes are therefore
-built on a scratch slide and their XML moved into the master's shape tree.
+**One quirk:** `master.shapes` and `layout.shapes` are read-only in `python-pptx`
+(`MasterShapes` has no `add_shape`). Build chrome shapes on a scratch slide and
+move their XML into the master's shape tree.
 
 ## Recipe: restyle a family from the master
 
@@ -88,36 +88,36 @@ print("removed:", removed)
 PY
 ```
 
-This is what clears the `empty_placeholder` review finding in
+This clears the `empty_placeholder` review finding in
 `container_tools/inspect_presentation_layout_geometry.py`. Keep a placeholder you
 still intend to fill, and never delete the one slide numbers are linked to.
 
 ## Reusing the source's own layouts
 
-When the user supplies a template, do not rebuild its look — put content into
-its placeholders. The inspection script prints each layout's placeholders with
-index, kind and rect, which is what you need to address them:
+With a supplied template, do not rebuild its look — put content into its
+placeholders. The inspection script prints each layout's placeholders with index,
+kind and rect, which is what you need to address them:
 
 ```bash
 "<python>" container_tools/inspect_presentation_layout_geometry.py --input template.pptx --json-out geometry.json
 ```
 
 Then address a placeholder by index on the slide:
-`slide.placeholders[1].text = "..."`. Slides created from a layout always have
-a placeholder for every non-empty slot, so index-based addressing is stable.
+`slide.placeholders[1].text = "..."`. Slides created from a layout always have a
+placeholder for every non-empty slot, so index-based addressing is stable.
 
 ## Pitfalls this avoids
 
 - Drawing the accent rule on every slide instead of the master: one edit later,
   half the deck has two rules.
-- Dragging a placeholder on a slide to fix one frame; the layout is untouched
-  and the next slide of the same family misbehaves again.
+- Dragging a placeholder on a slide to fix one frame; the layout is untouched and
+  the next slide of the same family misbehaves again.
 - Appending the scratch shape to the master without `drop_rel`: the orphan slide
   part stays in the package and `inspect_presentation_package_integrity.py`
   reports a slide count mismatch.
 - Adding a *blank* slide and a floating textbox where the template has a title
-  placeholder: the deck no longer answers to its own master, and the outline
-  view is empty.
+  placeholder: the deck no longer answers to its own master, and the outline view
+  is empty.
 
 ## CLI fast path
 

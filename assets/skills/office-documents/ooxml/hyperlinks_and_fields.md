@@ -1,6 +1,6 @@
 # Hyperlinks and fields
 
-A hyperlink and a field are both "a run that looks like text but is a pointer", and both break in the same way: the visible result is cached, so editing the text does not update anything.
+A hyperlink and a field are both "a run that looks like text but is a pointer", and both break the same way: the visible result is cached, so editing the text updates nothing.
 
 ## Hyperlinks
 
@@ -10,11 +10,11 @@ A hyperlink and a field are both "a run that looks like text but is a pointer", 
 </w:hyperlink>
 ```
 
-- The target is a relationship in `word/_rels/document.xml.rels` with `TargetMode="External"` for a URL, or a bare relative path for a file inside the package.
+- The target is a relationship in `word/_rels/document.xml.rels`: `TargetMode="External"` for a URL, a bare relative path for a file inside the package.
 - An internal link uses `w:anchor="bookmarkName"` and no relationship at all.
-- `w:hyperlink` is a wrapper around runs; a link that spans paragraphs is not legal — put one link per paragraph.
+- `w:hyperlink` wraps runs; a link spanning paragraphs is not legal — one link per paragraph.
 
-A link whose relationship is missing renders as blue underlined text that goes nowhere. That is also what a copy-paste between documents produces.
+A link whose relationship is missing renders as blue underlined text that goes nowhere. Copy-paste between documents produces the same thing.
 
 ## Simple fields
 
@@ -24,7 +24,7 @@ A link whose relationship is missing renders as blue underlined text that goes n
 </w:fldSimple>
 ```
 
-The `w:t` inside is a cache, not the truth. Change the text and the next field update overwrites it.
+The `w:t` inside is a cache, not the truth: change the text and the next field update overwrites it.
 
 ## Complex fields
 
@@ -36,13 +36,13 @@ The `w:t` inside is a cache, not the truth. Change the text and the next field u
 <w:r><w:fldChar w:fldCharType="end"/></w:r>
 ```
 
-The begin/instrText/separate/result/end sequence must stay in that order inside one paragraph. Word shows the result between `separate` and `end`, or recomputes on open when `w:updateFields` is set in `settings.xml`:
+The begin/instrText/separate/result/end sequence keeps that order inside one paragraph. Word shows the result between `separate` and `end`, or recomputes on open when `settings.xml` sets:
 
 ```xml
 <w:updateFields w:val="true"/>
 ```
 
-Setting it makes Word prompt or update on open. A viewer that ignores it (a PDF export, some libraries) keeps showing the cache — which is why a document delivered as PDF can show "1" for every page number.
+That makes Word prompt or update on open. A viewer that ignores it (PDF export, some libraries) keeps the cache — which is why a document delivered as PDF can show "1" for every page number.
 
 ## Which field for which job
 
@@ -57,9 +57,9 @@ Setting it makes Word prompt or update on open. A viewer that ignores it (a PDF 
 ## Editing fields safely
 
 - To freeze a result, replace the whole field span with a plain run (`fields_materialize.py`, `flatten_ref_fields.py`).
-- To renumber, update the cached result and leave the instruction alone; do not delete the begin/end markers.
-- `w:instrText` is where the instruction lives — a search-and-replace over `w:t` will not find `TOC`.
-- Bookmarks referenced by `REF` must exist (`w:bookmarkStart`/`w:bookmarkEnd` with matching `w:id`); a missing bookmark shows "Error! Reference source not found."
+- To renumber, update the cached result and leave the instruction alone; never delete the begin/end markers.
+- The instruction lives in `w:instrText`, so a search-and-replace over `w:t` will not find `TOC`.
+- Bookmarks referenced by `REF` must exist (`w:bookmarkStart` / `w:bookmarkEnd` with matching `w:id`); a missing bookmark shows "Error! Reference source not found.".
 
 ## See also
 

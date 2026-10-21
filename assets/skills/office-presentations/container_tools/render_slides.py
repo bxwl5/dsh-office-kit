@@ -58,7 +58,7 @@ def rasterise_pdf(pdf_path: Path, out_dir: Path, dpi: int) -> list[str]:
 
 
 def render_with_office(source: Path, out_dir: Path, dpi: int) -> dict:
-    """Export through the CLI, which tries every installed office suite."""
+    """Export through the CLI, which renders with the bundled LibreOffice kit."""
     scratch = Path(tempfile.mkdtemp(prefix="dsh-render-"))
     try:
         completed = subprocess.run(
