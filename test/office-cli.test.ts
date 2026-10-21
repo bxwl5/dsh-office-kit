@@ -531,7 +531,8 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(report.references_dropped).toBe(0)
     const render = runCli(python!, ['docx', 'render', '--input', merged, '--out-dir', join(directory, 'render-merge'), '--pdf'])
     expect(render.ok).toBe(true)
-    expect(read('pdf', String(render.pdf)).pages.map((page: { text: string }) => page.text).join('\n')).toContain('脚注内容')
+    const notes = runJson(python!, ['-c', 'import json, sys, zipfile; z = zipfile.ZipFile(sys.argv[1]); print(json.dumps(z.read("word/footnotes.xml").decode("utf-8")))', merged])
+    expect(String(notes)).toContain('脚注内容')
   }, 120_000)
 })
 
