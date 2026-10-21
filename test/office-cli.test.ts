@@ -207,6 +207,15 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(result.pages.map((page: { text: string }) => page.text).join('')).toContain('产品说明')
   })
 
+  it('never emits NUL text when the PDF spec contains CJK', () => {
+    // A Latin-only fallback font (DejaVuSans) registers cleanly and writes each CJK
+    // character as NUL, so a plain `ok: true` is not evidence the text survived.
+    const file = create('pdf', '编码 检查')
+    const text = read('pdf', file).pages.map((page: { text: string }) => page.text).join('')
+    expect(text).toContain('产品说明')
+    expect(text).not.toContain('\u0000')
+  })
+
   it('renders a PDF title once when the spec also carries a title block', () => {
     const spec = join(directory, 'pdf-title.json')
     const out = join(directory, '巡检 报告.pdf')
