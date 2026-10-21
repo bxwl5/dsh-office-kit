@@ -2,7 +2,6 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { UserTextRule } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -16,6 +15,7 @@ import { AnnotationReference } from './annotation-reference'
 import { ANNOTATION_ID, ANNOTATION_NODE, ANNOTATION_ORDER, ANNOTATION_PRIORITY, ANNOTATION_SLOT, FILE_ADDRESS_PREFIX, OFFICE_CHIP, OFFICE_CHIP_SLOT, OFFICE_NS, OFFICE_SOURCE } from './constants'
 import { DocumentAnnotation } from './document-annotation'
 import { OFFICE_ICONS } from './icons'
+import { officeChipRule, serializeOfficeCommand } from './office-chip'
 import { OfficeReference } from './office-reference'
 import { mountOfficeStyles } from './styles'
 
@@ -290,33 +290,12 @@ export function apply(ctx: ClientContext): void {
         const feature = featureById(ref)
         if (feature === undefined)
           return '/documents'
-        return `/${feature.command}\n\nUse the "${feature.skill}" skill for this request and follow its instructions before creating, editing, or rendering files.`
+        return serializeOfficeCommand(feature)
       },
     },
   }
 
-  const rule: UserTextRule<'office'> = {
-    id: OFFICE_CHIP,
-    order: 20,
-    match(text, from) {
-      const tokens = /(?<!\S)\/([\w-]+)(?!\S)/gu
-      tokens.lastIndex = from
-      for (let token = tokens.exec(text); token !== null; token = tokens.exec(text)) {
-        const feature = featureByCommand(token[1] ?? '')
-        if (feature === undefined)
-          continue
-        return {
-          id: OFFICE_CHIP,
-          start: token.index,
-          end: token.index + token[0].length,
-          data: { feature: feature.id },
-        }
-      }
-      return undefined
-    },
-  }
-
-  ctx.effect(() => ctx.uiConversation.userText.register(rule), 'office-suite: transcript chip')
+  ctx.effect(() => ctx.uiConversation.userText.register(officeChipRule), 'office-suite: transcript chip')
 
   ctx.effect(() => ctx.slots.inject(OFFICE_CHIP_SLOT, () => ctx.slots.register({
     name: OFFICE_CHIP_SLOT,

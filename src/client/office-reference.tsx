@@ -13,6 +13,7 @@ export function OfficeReference({ node, raw, interactive, openOffice, officeLabe
     return <span>{raw}</span>
 
   const Icon = OFFICE_ICONS[feature.id]
+  const title = `/${feature.command}`
   const content = (
     <>
       <Icon className="dsh-office-ref-icon" size={14} />
@@ -22,7 +23,7 @@ export function OfficeReference({ node, raw, interactive, openOffice, officeLabe
 
   if (!interactive) {
     return (
-      <span className="dsh-office-ref" title={raw}>
+      <span className="dsh-office-ref" title={title}>
         {content}
       </span>
     )
@@ -32,7 +33,7 @@ export function OfficeReference({ node, raw, interactive, openOffice, officeLabe
     <button
       type="button"
       className="dsh-office-ref"
-      title={raw}
+      title={title}
       data-interactive
       onClick={() => openOffice(feature.id)}
     >
