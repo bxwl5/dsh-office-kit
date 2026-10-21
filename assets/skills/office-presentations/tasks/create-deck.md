@@ -5,10 +5,10 @@
 - Audience and setting: live talk, read-on-its-own PDF, or both. A read-only
   deck needs more words; a live deck needs fewer.
 - Length: number of slides or minutes.
-- Brand: a template file, a colour, or nothing (then use the defaults in
-  [style-guidelines](../references/style-guidelines.md)).
-- Evidence: numbers, charts, tables and images the user already has. Never
-  invent a metric — if a number is needed and missing, say so.
+- Brand: a template file, a colour, or the defaults in
+  [style-guidelines](../references/style-guidelines.md).
+- Evidence: numbers, charts, tables, images the user has. Never invent a metric —
+  if a number is needed and missing, say so.
 
 ## Route
 
@@ -65,21 +65,20 @@ For the ordinary deck (cover, bullets, section, table, chart, image, closing):
 }
 ```
 
-Layouts map to `title`, `bullets`, `section`, `title_only`, `blank`. Tables are
-placed at 0.8 in from the left at the running cursor and cannot be positioned —
-put a table on its own slide, or use the [tables recipe](../recipes/tables.md).
+Layouts: `title`, `bullets`, `section`, `title_only`, `blank`. Tables sit 0.8 in
+from the left at the running cursor and cannot be positioned — give a table its
+own slide, or use the [tables recipe](../recipes/tables.md).
 
 ### Everything else: build it with the recipes
 
-Anything at a coordinate, any crop, any connector, any master change is a
-`python-pptx` snippet:
-
-- [textbox at a coordinate](../recipes/textbox-at-coordinate.md)
-- [auto-layout rules](../recipes/autolayout.md)
-- [tables](../recipes/tables.md) · [native charts](../recipes/native-charts.md)
-- [images](../recipes/images.md) · [connectors](../recipes/connectors.md)
-- [rich text runs](../recipes/rich-text-runs.md) · [theme tokens](../recipes/theme-tokens.md)
-- [speaker notes](../recipes/speaker-notes.md) · [masters and layouts](../recipes/master-and-layouts.md)
+Anything at a coordinate, any crop, connector or master change is a `python-pptx`
+snippet: [textbox at a coordinate](../recipes/textbox-at-coordinate.md),
+[auto-layout](../recipes/autolayout.md), [tables](../recipes/tables.md) ·
+[native charts](../recipes/native-charts.md), [images](../recipes/images.md) ·
+[connectors](../recipes/connectors.md), [rich text
+runs](../recipes/rich-text-runs.md) · [theme tokens](../recipes/theme-tokens.md),
+[speaker notes](../recipes/speaker-notes.md) · [masters and
+layouts](../recipes/master-and-layouts.md).
 
 Extending a deck you already built:
 
@@ -100,7 +99,8 @@ template's look by hand.
 
 ## Writing the slides
 
-Story first. Write the one-sentence claim for every slide, in order, then fill
-the frames. If a claim needs two sentences, it is two slides. Keep bullets as
-claims ([native-bullets](../references/native-bullets.md)) and evidence native
+Story first: the one-sentence claim for every slide, in order, then fill the
+frames (loop in [authoring-workflow](../references/authoring-workflow.md)). A
+claim needing two sentences is two slides. Bullets are claims
+([native-bullets](../references/native-bullets.md)); evidence is native
 ([native-evidence](../references/native-evidence.md)).

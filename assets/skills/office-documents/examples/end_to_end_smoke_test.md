@@ -1,6 +1,6 @@
 # End-to-end smoke test
 
-A short job that touches creation, inspection, structural changes and verification. Run it once after a runtime change, or as a template for "is this environment healthy".
+A short job touching creation, inspection, structural change and verification. Run it after a runtime change, or as a template for "is this environment healthy".
 
 ```bash
 PY="<python>"; CLI="<cli>"; S="<skill>/scripts"; R="<skill>"; W="/tmp/docx-smoke"
@@ -41,7 +41,7 @@ Expect `ok: true` and non-zero `headings`, `tables`, `equations`.
 "$PY" "$S/style_lint.py" "$W/base.docx"
 ```
 
-Expect the sections, the parts list to include `word/document.xml`, Letter 8.5×11 portrait, and an empty style-lint `counts`.
+Expect the sections, `word/document.xml` in the parts list, Letter 8.5×11 portrait, and an empty style-lint `counts`.
 
 ## 3. Change it structurally
 
@@ -63,7 +63,7 @@ Expect the sections, the parts list to include `word/document.xml`, Letter 8.5×
 "$PY" "$S/table_geometry.py" "$W/with-toc.docx"
 ```
 
-Audits may exit 1 with findings — that is a report, not a failure of the environment. Every finding should be explainable.
+Audits may exit 1 with findings: that is a report, not an environment failure. Every finding should be explainable.
 
 ## 5. Verify visually
 
@@ -71,7 +71,7 @@ Audits may exit 1 with findings — that is a report, not a failure of the envir
 "$PY" "$R/render_docx.py" "$W/with-toc.docx" --output_dir "$W/render" --dpi 150
 ```
 
-Then open each PNG with `read_image`. Without the DSH LibreOffice kit the command exits 3 with `no_renderer`; that is a setup problem, not a document problem, and the rest of the test still stands.
+Open each PNG with `read_image`. Without the DSH LibreOffice kit the command exits 3 with `no_renderer`: a setup problem, not a document problem, and the rest of the test still stands.
 
 ## 6. Deliver
 
@@ -83,4 +83,4 @@ Copy the final file into the user's workspace, `present` it, and state what chan
 rm -rf "$W"
 ```
 
-Nothing under the workspace should be left behind from a smoke test.
+Nothing under the workspace should be left behind by a smoke test.

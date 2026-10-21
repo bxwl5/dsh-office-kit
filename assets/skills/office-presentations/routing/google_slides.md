@@ -1,6 +1,6 @@
 # Handing a deck to Google Slides
 
-Google Slides imports `.pptx`, and mostly survives it. What it does not survive
+Google Slides imports `.pptx` and mostly survives it. What it does not survive
 is worth designing around.
 
 ## What converts cleanly
@@ -25,10 +25,10 @@ is worth designing around.
 
 1. Build the deck as a normal `.pptx` — nothing Slides-specific is needed.
 2. Render and inspect the PNGs locally first; fix overflow before importing.
-3. Upload to Drive, open with Google Slides, and check these in order: title
+3. Upload to Drive, open with Google Slides, and check in this order: title
    wrapping, bullet indentation, connector attachment, chart axes, notes.
-4. If the deck will be edited by other people in Slides, keep shapes distinct
-   and named (right-click → rename) so comments and edits are unambiguous.
+4. If others will edit the deck in Slides, keep shapes distinct and named
+   (right-click → rename) so comments and edits are unambiguous.
 
 ## Sharing
 

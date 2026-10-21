@@ -1,38 +1,35 @@
-# Internal navigation
+# Navigation and internal links
 
-**Goal.** Let a reader jump around a long document — from a contents list to a section, and back — without relying on the TOC field being recalculated.
+An internal link is `w:hyperlink w:anchor="bookmark"`; the target is a `w:bookmarkStart`/`w:bookmarkEnd` pair. Both live in the body, so PDF export keeps the links.
 
-A hyperlink to a place inside the document is `w:hyperlink w:anchor="bookmark"`; the target is a `w:bookmarkStart`/`w:bookmarkEnd` pair with that name. Both live in the body, so an export to PDF keeps the links.
-
-## Build a navigation set
+## Build navigation
 
 ```bash
-"<python>" "<skill>/scripts/internal_nav.py" "<file.docx>" --out "<file-nav.docx>" --levels 1 2 \
-  --toc_title "Contents"
+"<python>" "<skill>/scripts/internal_nav.py" "<file.docx>" --out "<file-nav.docx>" --levels 1 2 --toc_title "Contents"
 ```
 
-What it does, in order:
+The script:
 
-1. Bookmarks every heading as `nav_h1`, `nav_h2`, … using its outline level.
-2. Inserts a `Contents` heading and a quick-link bar (one link per heading) at the top.
-3. Indents each contents entry by 360 twips per level so the hierarchy is visible.
-4. Appends a small `Back to contents` link after each heading.
-5. Bookmarks the top, the contents list and the bottom (`nav_top`, `nav_toc`, `nav_bottom`).
+- bookmarks every heading `nav_h1`, `nav_h2`, … by outline level;
+- inserts a `Contents` heading and a quick-link bar at the top;
+- indents contents entries 360 twips per level;
+- appends a `Back to contents` link after each heading;
+- bookmarks the top, the contents and the bottom as `nav_top`, `nav_toc`, `nav_bottom`.
 
-Flags: `--no_quicklinks` skips the horizontal bar, `--no_back_to_toc` skips the per-heading back link, `--no_top_bottom` skips the two edge targets.
+Flags: `--no_quicklinks`, `--no_back_to_toc`, `--no_top_bottom`.
 
-The script reports `missing` when a link target could not be created — read that list, because a link without a bookmark is dead in Word and looks fine in a render.
+It reports `missing` when a target could not be created. Read that list: a dead link looks fine in a render.
 
-## Static versus field-driven
+## Static versus field
 
-`internal_nav.py` writes literal entries: it costs a rebuild when headings change, and it always looks the same in every renderer. `insert_toc.py` writes a live `TOC` field: it updates itself but needs a recalculation before it shows anything useful. A document that will be edited repeatedly wants the field; a document going out as a PDF export wants the static list.
+`internal_nav.py` writes literal entries: rebuild when headings change, and every renderer shows the same result. `insert_toc.py` writes a live `TOC` field: self-updating, but it needs recalculation. A repeatedly edited document wants the field; a PDF export wants the static list.
 
 ## Verify
 
-Render, then click through the pages you can see: entry indentation, that the contents heading is styled as a heading, and that `Back to contents` did not push a paragraph onto a new page. Dead anchors do not show in a screenshot — check `bookmarkStart` names against the `w:anchor` values when the script reports a miss.
+Render and click through: entry indentation, the contents heading styled as a heading, and `Back to contents` not pushing a paragraph onto a new page. Dead anchors do not show in a screenshot — when the script reports a miss, check `bookmarkStart` names against the `w:anchor` values.
 
 ## Pitfalls
 
-- Bookmarks must be unique per document; re-running the script on its own output creates `nav_h1` twice, so start from the original.
-- A hyperlink anchor is case-sensitive.
-- Link styling comes from the `Hyperlink` character style; if links look like body text, the style is missing, not the link.
+- Bookmarks must be unique per document. Re-running on its own output duplicates `nav_h1`, so start from the original.
+- Hyperlink anchors are case-sensitive.
+- Link styling comes from the `Hyperlink` character style.

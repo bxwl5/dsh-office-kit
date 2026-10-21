@@ -1,6 +1,6 @@
 # Relationships and content types
 
-A `.docx` is a zip of parts, and every relationship between parts is declared twice: once as a relationship entry, once as a content type. Miss either and the file either loses the feature or refuses to open.
+A `.docx` is a zip of parts, and every relationship between parts is declared twice: once as a relationship entry, once as a content type. Miss either and the file loses the feature or refuses to open.
 
 ## The two registries
 
@@ -10,7 +10,7 @@ _rels/.rels                  # package -> document, core props
 word/_rels/document.xml.rels # document -> styles, numbering, media, header, footer, comments, hyperlinks
 ```
 
-`[Content_Types].xml` has `<Default Extension="xml" ContentType="..."/>` for extension defaults and `<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>` for parts that do not follow an extension rule.
+`[Content_Types].xml` uses `<Default Extension="xml" ContentType="..."/>` for extension defaults and `<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>` for parts that do not follow an extension rule.
 
 A relationship:
 
@@ -20,7 +20,7 @@ A relationship:
   Target="comments.xml"/>
 ```
 
-`Id` is scoped to the part that owns the `.rels` file, so `rId5` in the document and `rId5` in a header are unrelated. `Target` is relative to the owner directory unless it is absolute (`/word/media/image1.png`) or external (`TargetMode="External"`, used for hyperlinks).
+`Id` is scoped to the part that owns the `.rels` file, so `rId5` in the document and `rId5` in a header are unrelated. `Target` is relative to the owner directory unless absolute (`/word/media/image1.png`) or external (`TargetMode="External"`, used for hyperlinks).
 
 ## What breaks
 
@@ -32,13 +32,13 @@ A relationship:
 | Broken link | Relationship removed but `r:id` left in the body |
 | Lost image | Media copied without a new relationship id |
 
-Ids must be unique within a `.rels` part. When adding one, read the existing ids and take `max+1`; reusing an id silently rewires an unrelated reference.
+Ids are unique within a `.rels` part. Read the existing ids and take `max+1`; reusing an id silently rewires an unrelated reference.
 
 ## The parts that exist only when used
 
-`word/comments.xml`, `word/footnotes.xml`, `word/endnotes.xml`, `word/headerN.xml`, `word/footerN.xml`, `word/numbering.xml`, `docProps/custom.xml` — none are required, and each needs three pieces when added: the part, the override, the relationship. Removing one means removing all three (or Word reports corruption).
+`word/comments.xml`, `word/footnotes.xml`, `word/endnotes.xml`, `word/headerN.xml`, `word/footerN.xml`, `word/numbering.xml`, `docProps/custom.xml` — none are required, and each needs three pieces when added: part, override, relationship. Removing one means removing all three, or Word reports corruption.
 
-Headers and footers are referenced from the section properties, not from the document root:
+Headers and footers are referenced from the section properties, not the document root:
 
 ```xml
 <w:sectPr>
@@ -59,4 +59,4 @@ Headers and footers are referenced from the section properties, not from the doc
 
 ## Rebuild rather than regenerate
 
-When a package is broken, unzipping it, fixing the two registries and rezipping with `[Content_Types].xml` first (stored, not deflated) usually recovers it. The kit writes that order on save for this reason.
+When a package is broken, unzip it, fix the two registries and rezip with `[Content_Types].xml` first (stored, not deflated). The kit writes that order on save for this reason.

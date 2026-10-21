@@ -6,11 +6,11 @@ A table in a deck is a grid of cells on a canvas; it does not reflow. Three
 properties decide whether it reads as a table or as soup:
 
 - **Column widths** are the layout. `table.columns[i].width = Inches(3.2)` —
-  setting them is mandatory, because `add_table` splits the width evenly.
+  mandatory, because `add_table` splits the width evenly.
 - **Row heights** are a minimum. Text taller than the row pushes it open, which
-  then runs into whatever sits below.
+  runs into whatever sits below.
 - **Cell margins** default to 0.1 in left/right and 0.05 in top/bottom on a
-  0.5 in row, which is most of the row. Reduce them when rows are tight.
+  0.5 in row — most of the row. Reduce them when rows are tight.
 
 Header row emphasis (`table.first_row = True`) is a table style switch, not a
 formatting guess: it turns on the theme's header fill and bold.
@@ -66,23 +66,23 @@ PY
 
 ## Numbers people trust
 
-- Right-align numeric columns, left-align the label column, and keep decimals
+- Right-align numeric columns, left-align the label column, keep decimals
   consistent per column (`553`, not `553.0` next to `171`).
-- A total row is a claim. Show enough rows that the reader can check it, and
-  let `container_tools/native_table_arithmetic_gate.py` prove it from the file.
-- Units belong in the header (`Orders`, `Touches`), not repeated in every cell.
-- Money keeps its currency in the header or the first row; `¥1,240` in every
-  cell of a dense table is noise.
+- A total row is a claim. Show enough rows that the reader can check it, and let
+  `container_tools/native_table_arithmetic_gate.py` prove it from the file.
+- Units belong in the header (`Orders`, `Touches`), not in every cell.
+- Money keeps its currency in the header or first row; `¥1,240` in every cell of
+  a dense table is noise.
 
 ## Pitfalls this avoids
 
 - Even column widths turning "Q1" into a 4 in column while numbers crowd.
-- A table whose declared height is smaller than its content: the last row is
-  drawn below the intended block and collides with the footer.
+- A declared height smaller than the content: the last row is drawn below the
+  intended block and collides with the footer.
 - Colouring cells individually instead of letting `first_row` do the header.
 
 ## CLI fast path
 
-`pptx create` accepts `{"table": {"headers": [...], "rows": [[...]]}}` and
-places it at 0.8 in from the left, full content width, at the running cursor.
-For a chosen rect, column widths or right-aligned numbers, use the recipe.
+`pptx create` accepts `{"table": {"headers": [...], "rows": [[...]]}}` and places
+it at 0.8 in from the left, full content width, at the running cursor. For a
+chosen rect, column widths or right-aligned numbers, use the recipe.

@@ -1,9 +1,6 @@
 # Number formats
 
-A number format changes how a stored value is displayed, never the value. The
-cell keeps full precision; `0.0%` shows `6.4%` for `0.06398`. Never store a
-rounded number to make a column look tidy, and never store `"6.4%"` as text —
-it stops summing.
+A number format changes how a stored value is displayed, never the value. The cell keeps full precision; `0.0%` shows `6.4%` for `0.06398`. Never store a rounded number to make a column look tidy, and never store `"6.4%"` as text — it stops summing.
 
 ```python
 import sys
@@ -42,31 +39,18 @@ wb.save(sys.argv[2])
 | Date | `yyyy-mm-dd` | Sortable, unambiguous; store a real date, not text |
 | Text passthrough | `@` | For codes and account numbers with leading zeros |
 
-Do not use `0,0%` or `#.##0`. They are not locale-independent and render
-differently on an engine that reads `,` as a decimal separator.
+Do not use `0,0%` or `#.##0`. They are not locale-independent and render differently on an engine that reads `,` as a decimal separator.
 
 ## Signs, units, and scale
 
-- State the unit once, in the header or title (`Revenue (USD)`), and keep the
-  stored value in that unit. A column that stores thousands but is headed
-  "USD" is a defect waiting to be discovered.
-- If the presentation needs thousands (`$K`) while the data is in units,
-  format does not divide — either store thousands and say so, or divide with a
-  formula in a helper column. Never scale twice.
-- Percentages: store `0.064`, never `6.4`. A stored `6.4` formatted `0.0%`
-  reads `640.0%`.
+- State the unit once, in the header or title (`Revenue (USD)`), and keep the stored value in that unit. A column that stores thousands but is headed "USD" is a defect waiting to be discovered.
+- If the presentation needs thousands (`$K`) while the data is in units, format does not divide — either store thousands and say so, or divide with a formula in a helper column. Never scale twice.
+- Percentages: store `0.064`, never `6.4`. A stored `6.4` formatted `0.0%` reads `640.0%`.
 
 ## Widths and `###`
 
-`###` means the column is narrower than the formatted number. Widen that
-column (`ws.column_dimensions["B"].width = 14`) or shrink the font for the block.
-Never shorten the number, switch to text, or reduce decimals just to fit — and do
-not autofit every column in the sheet to fix one.
+`###` means the column is narrower than the formatted number. Widen that column (`ws.column_dimensions["B"].width = 14`) or shrink the font for the block. Never shorten the number, switch to text, or reduce decimals just to fit — and do not autofit every column in the sheet to fix one.
 
 ## Dates
 
-Write a real date (`datetime.date(2026, 1, 31)`) and set `yyyy-mm-dd`. Storing
-an ISO string sorts alphabetically and calculates as text: `EDATE`, `SUMIFS` on
-dates, and `YEAR()` all fail silently or with `#VALUE!`. A date typed as a number
-of days since 1899-12-30 is a serial — fine for formulas, unreadable for people,
-so format it.
+Write a real date (`datetime.date(2026, 1, 31)`) and set `yyyy-mm-dd`. An ISO string sorts alphabetically and calculates as text: `EDATE`, `SUMIFS` on dates, and `YEAR()` all fail silently or with `#VALUE!`. A date typed as a number of days since 1899-12-30 is a serial — fine for formulas, unreadable for people, so format it.

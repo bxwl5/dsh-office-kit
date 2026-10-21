@@ -610,7 +610,7 @@ function apply(ctx) {
 			const parsed = parseSkill(raw, path);
 			const runtime = await ensureRuntime(paths.configFile);
 			const kitCli = resolveKitCli();
-			const pythonLine = runtime.state === "ok" && runtime.python != null ? `\n\n## Office runtime\n\nUse these verified absolute paths for every helper command. Quote paths that contain spaces. \`skill\` is this skill's own directory: every script it names lives at \`<skill>/scripts/...\`; \`shared\` holds the cross-format workflow notes; the helper finds \`renderer\` on its own, so never pass it.\n\n\`\`\`json\n${JSON.stringify({
+			const pythonLine = runtime.state === "ok" && runtime.python != null ? `\n\n## Office runtime\n\nVerified absolute paths. Use them for every helper command; quote paths that contain spaces.\n\n- \`python\` runs all helper scripts, \`cli\` is the Office helper CLI.\n- \`skill\` is this skill's directory: its scripts live under \`<skill>/scripts/\`.\n- \`shared\` holds the cross-format notes and shared scripts.\n- \`renderer\` is the DSH LibreOffice kit; the helper finds it itself, so never pass it.\n\n\`\`\`json\n${JSON.stringify({
 				python: runtime.python.path,
 				cli: paths.cli,
 				skill: dirname(path).split("\\").join("/"),

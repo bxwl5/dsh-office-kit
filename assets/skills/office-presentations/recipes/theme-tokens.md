@@ -10,10 +10,9 @@ The theme part (`ppt/theme/theme1.xml`) holds two palettes and two font lists:
 - `majorFont` / `minorFont` — the heading and body typefaces inherited by every
   run without an explicit font.
 
-So: write `RGBColor.rgb` when a colour must never change, and reference a theme
-colour when the user may re-skin the deck. A deck with hard-coded hex
-everywhere cannot be re-branded, which is usually why the user supplied a
-template.
+Write `RGBColor.rgb` when a colour must never change; reference a theme colour
+when the user may re-skin the deck. A deck with hard-coded hex everywhere cannot
+be re-branded — usually why the user supplied a template.
 
 ## Recipe: define the palette once, use it everywhere
 
@@ -73,12 +72,12 @@ names it finds in the theme, so check there before introducing a new typeface.
 
 ## Pitfalls this avoids
 
-- Two similar hexes drifting apart across slides (`#161d28` on one slide,
-  `#171e29` on the next) because the colour was retyped instead of referenced.
+- Two similar hexes drifting apart across slides (`#161d28` here, `#171e29`
+  there) because the colour was retyped instead of referenced.
 - A serif body font set from taste rather than from the theme, so the deck
   contradicts the template it was built in.
-- `font.color.theme_color = MSO_THEME_COLOR.ACCENT_1` *and* `font.color.rgb`
-  on the same run: the last assignment wins and the theme reference vanishes.
+- `font.color.theme_color = MSO_THEME_COLOR.ACCENT_1` *and* `font.color.rgb` on
+  the same run: the last assignment wins and the theme reference vanishes.
 
 ## CLI fast path
 

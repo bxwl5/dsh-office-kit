@@ -6,10 +6,10 @@ Notes live in `ppt/notesMasters/` plus one `ppt/notesSlides/notesSlideN.xml` per
 slide, tied to the slide by a relationship. In `python-pptx` this is
 `slide.notes_slide.notes_text_frame` — the notes slide is created on first
 access, so reading it in a loop silently adds one per slide. Only touch it when
-you are writing.
+writing.
 
-Notes are not visible in the render. That means a notes problem cannot be caught
-by looking at the PNGs: check them with `pptx read` or by reading the XML back.
+Notes are invisible in the render, so a notes problem cannot be caught by looking
+at the PNGs: check them with `pptx read` or by reading the XML back.
 
 ## Recipe
 
@@ -45,21 +45,21 @@ PY
   12 sites").
 - The answer to the question the slide invites.
 - Nothing that belongs on the slide: if the audience needs it, put it on the
-  slide, notes are invisible when the deck is sent as a PDF.
+  slide — notes are invisible when the deck is sent as a PDF.
 
 ## Pitfalls this avoids
 
 - Iterating `prs.slides` and *reading* `notes_slide` on a template with none:
   every slide gains an empty notes part and the file grows.
 - Long notes pasted as one paragraph with line breaks that only look like
-  paragraphs; each intended paragraph should be `add_paragraph()` so the notes
-  pane and the presenter view indent them.
+  paragraphs; use `add_paragraph()` per intended paragraph so the notes pane and
+  presenter view indent them.
 - Assuming notes render into the preview: they do not, so verify them from the
   file.
 
 ## CLI fast path
 
 `pptx create` writes slides without notes. The recipe above is the route; then
-`pptx read --input deck-notes.pptx` does not print notes, so read them back with
+`pptx read --input deck-notes.pptx` does not print notes, so read them back from
 `ppt/slides` sibling `notesSlide` parts via
 `inspect_presentation_package_integrity.py` (it counts `notesSlides`).

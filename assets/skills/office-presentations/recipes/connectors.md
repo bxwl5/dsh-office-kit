@@ -2,11 +2,10 @@
 
 ## Mechanics
 
-A connector is a line with two attachment sites. `add_connector` takes a begin
-and end shape *plus* connection indices, which is what makes the line follow the
-boxes when they move. If you pass coordinates instead, the line is a floating
-line: it looks right in the file you made and wrong the first time a box is
-nudged.
+A connector is a line with two attachment sites. `add_connector` takes begin and
+end shapes *plus* connection indices, which is what makes the line follow the
+boxes when they move. Pass coordinates instead and you get a floating line: right
+in the file you made, wrong the first time a box is nudged.
 
 - `MSO_CONNECTOR.STRAIGHT | ELBOW | CURVE`
 - `connector.begin_connect(shape, idx)` / `end_connect(shape, idx)`; `idx` is
@@ -59,19 +58,19 @@ PY
 
 ## Rules
 
-1. Connect sides that face each other: right → left for a row, bottom → top for
-   a column. A line crossing its own boxes reads as an error.
+1. Connect facing sides: right → left for a row, bottom → top for a column. A
+   line crossing its own boxes reads as an error.
 2. Elbow connectors for orthogonal flows, straight for a single hop, curve almost
    never.
-3. Two crossing connectors in one diagram is the point where the diagram becomes
-   a picture of a diagram; split it.
+3. Two crossing connectors in one diagram makes it a picture of a diagram; split
+   it.
 4. Label the connector ("12 min", "auto") with a small textbox near its middle,
    not with arrow direction alone.
 
 ## Pitfalls this avoids
 
 - `add_connector` with free coordinates: the line is positioned but unattached,
-  and the deck's own edits break it silently.
+  and later edits break it silently.
 - Arrowhead index confusion: arrowhead values are a bitmask enum, not a boolean.
 - Connectors behind filled shapes because they were added before the boxes.
 
@@ -79,5 +78,5 @@ PY
 
 There is no connector verb in `pptx create`; this recipe is the route. After
 building, `container_tools/inspect_presentation_layout_geometry.py` flags
-`connector_over_text` when a line crosses a text shape, which is the failure
-mode you cannot see in a thumbnail.
+`connector_over_text` when a line crosses a text shape — the failure mode you
+cannot see in a thumbnail.

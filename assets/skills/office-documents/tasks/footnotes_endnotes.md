@@ -1,18 +1,16 @@
 # Footnotes and endnotes
 
-**Goal.** Attach a reference note at exactly one place in the text, and keep the note body in the notes part rather than in the body.
+Notes live outside the text flow: `word/footnotes.xml` (or `word/endnotes.xml`) holds the note text, a `w:footnoteReference w:id="N"` run in the body points at it, and the part needs the separator notes (ids -1 and 0) or Word repairs the file.
 
-Notes live outside the flow: `word/footnotes.xml` (or `word/endnotes.xml`) holds the text, and a `w:footnoteReference w:id="N"` run in the body points at it. The part also needs the separator notes (ids -1 and 0) or Word repairs the file.
+## Insert
 
-## Insert a note
-
-Put a marker where the reference belongs, then convert it:
+Put a marker where the reference belongs, then run:
 
 ```bash
-"<python>" "<skill>/scripts/insert_note.py" "<file.docx>" --kind footnote --text "Source: ledger extract, June." --out "<file-notes.docx>"
+"<python>" "<skill>/scripts/insert_note.py" "<file.docx>" --kind footnote --text "Source: ledger extract, June." --out "<file-notes.docx"
 ```
 
-The marker defaults to `[[NOTE]]`; change it with `--marker`. The script creates the notes part (with separator and continuation-separator entries) if it does not exist, allocates the next free id, splits the surrounding run so only the marker is replaced by the reference, and styles the note text with `FootnoteText` and the reference with `FootnoteReference`. `--kind endnote` writes to the endnotes part instead.
+The marker defaults to `[[NOTE]]` (`--marker`). The script creates the notes part with separator and continuation-separator entries when they are missing, allocates the next free id, splits the surrounding run so only the marker is replaced, and styles the note text `FootnoteText` and the reference `FootnoteReference`. `--kind endnote` writes the endnotes part instead.
 
 ## Report
 
@@ -20,19 +18,19 @@ The marker defaults to `[[NOTE]]`; change it with `--marker`. The script creates
 "<python>" "<skill>/scripts/footnotes_report.py" "<file.docx>"
 ```
 
-Lists each note's text, how many references point at it, and which references dangle or which notes are orphaned. Orphans appear when content is copied between documents; dangling references appear when a note is deleted but its marker stays.
+Lists each note's text and reference count, dangling references (note deleted, marker kept) and orphaned notes (no reference — usually copied content).
 
 ## Renumbering
 
-Note ids are numbers, but Word displays them sequentially by position, so inserting a note in the middle renumbers the rest automatically. Do not try to keep ids in display order — keep them unique.
+Ids are numbers, but Word displays notes sequentially by position, so inserting in the middle renumbers automatically. Keep ids unique, not in display order.
 
 ## Verify
 
-Render the page with the note and read the note area: the marker should sit immediately after the word it annotates, with no space before it, and the note text should match. Also check the last page — an endnote section that lands after the signature block is a layout defect.
+Render the page with the note. The marker sits immediately after the word it annotates, with no space before it, and the note text matches. Check the last page too: an endnote section after the signature block is a layout defect.
 
 ## Pitfalls
 
-- A footnote reference inside a table cell is allowed; inside a header it is not.
-- Copying a paragraph with `python-docx` copies the reference but not the note body — recreate the note in the target document.
-- Deleting note text without deleting the reference leaves a broken document that opens with a repair prompt.
-- Field instructions are not allowed in the note separator; keep the built-in separator notes untouched.
+- A footnote reference is allowed in a table cell, not in a header.
+- Copying a paragraph with python-docx copies the reference but not the note body.
+- Deleting note text without its reference leaves a repair prompt.
+- Field instructions are not allowed in the note separator; leave the built-in separators untouched.

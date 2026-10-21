@@ -1,41 +1,39 @@
 # Restrict editing
 
-**Goal.** Stop a reviewer from changing the body while still letting them comment or track changes — the "send for review" state, not encryption.
+Restrictions live in `w:documentProtection` inside `word/settings.xml`. Modes: `readOnly`, `comments`, `trackedChanges`, `forms`, each with `enforcement`. This is a guardrail against accidental edits, not encryption: a determined reader can remove it.
 
-Editing restrictions live in `w:documentProtection` inside `word/settings.xml`. The modes are `readOnly`, `comments`, `trackedChanges`, `forms`, plus `enforcement` to switch the restriction on. This is a guardrail against accidental edits; it does not encrypt content and a determined reader can remove it.
-
-## Set a mode
+## Set
 
 ```bash
-"<python>" "<skill>/scripts/set_protection.py" "<file.docx>" --mode comments --out "<file-review.docx>"
-"<python>" "<skill>/scripts/set_protection.py" "<file.docx>" --mode readOnly --no_enforce --out "<file-open.docx>"
+"<python>" "<skill>/scripts/set_protection.py" "<file.docx>" --mode comments --out "<file-review.docx"
+"<python>" "<skill>/scripts/set_protection.py" "<file.docx>" --mode readOnly --no_enforce --out "<file-open.docx"
 ```
 
-Modes and aliases: `off`/`none`, `readOnly`/`read_only`, `comments`/`comment`, `trackedChanges`/`tracked_changes`, `forms`/`form`. `--no_enforce` writes the setting without switching it on, which is useful when the opening dialog should be avoided.
+Mode aliases: `off` / `none`, `readOnly` / `read_only`, `comments` / `comment`, `trackedChanges` / `tracked_changes`, `forms` / `form`. `--no_enforce` writes the setting without switching it on, which avoids the dialog on open.
 
-`--hash` also writes a password hash (SHA-512, 100000 spins; `--salt`, `--spin_count` to change it). Be honest with the user: the hash deters casual edits, it is not encryption, and losing the password means the restriction has to be stripped from the XML.
+`--hash` also writes a password hash (SHA-512, 100000 spins; `--salt` and `--spin_count` change the parameters). Say plainly that it deters casual edits, is not encryption, and that losing the password means stripping the restriction from the XML.
 
-## Which mode to pick
+## Choose a mode
 
-| Intent | Mode |
+| Requirement | Mode |
 |---|---|
-| Review comments only, no text edits | `comments` |
-| All edits should be tracked | `trackedChanges` |
-| Fill a form, nothing else | `forms` |
+| Comments only | `comments` |
+| All edits tracked | `trackedChanges` |
+| Fill a form | `forms` |
 | View only | `readOnly` |
 
-## Remove
-
-```bash
-"<python>" "<skill>/scripts/set_protection.py" "<file-protected.docx>" --mode off --out "<file-open.docx>"
-```
+Remove the restriction with `--mode off --out "<file-open.docx"`.
 
 ## Verify
 
-`docx_kit.py xml '<file.docx>' word/settings.xml | grep documentProtection` shows the element and its enforcement attribute. Then open behaviour matters, not the page — render will not show a restriction. Say which mode you applied, and that removing it needs the same script or Word's Review pane.
+```bash
+"<python>" "<skill>/scripts/docx_kit.py" xml '<file.docx>' word/settings.xml | grep documentProtection
+```
+
+The element and its enforcement setting appear in the output. Open behaviour is what matters, not the page: a render never shows a restriction. State the mode you applied and that removing it needs the same script or Word's Review pane.
 
 ## Pitfalls
 
-- Protected documents that also contain tracked changes and comments often prompt on open; apply the restriction last.
-- `forms` mode without form fields leaves a document nobody can edit usefully.
-- Protection marked with a hash cannot be turned off in Word without the password, but `--mode off` still clears it — that is why it is a guardrail, not security.
+- A protected document that also holds tracked changes or comments often prompts on open; apply the restriction last.
+- `forms` without form fields leaves a document nobody can use.
+- A hashed restriction cannot be turned off in Word without the password, yet `--mode off` clears it — which is why this is a guardrail, not security.

@@ -1,9 +1,6 @@
 # Conditional formats
 
-Conditional formatting paints a cell from a rule, not from a value. The rule is
-stored separately from the cell format, so a cell can look red while its stored
-fill stays default — and a reader who copies the value out gets the number, not
-the colour.
+Conditional formatting paints a cell from a rule, not from a value. The rule is stored separately from the cell format, so a cell can look red while its stored fill stays default — and a reader who copies the value out gets the number, not the colour.
 
 ```python
 import sys
@@ -39,31 +36,17 @@ ws.conditional_formatting.add(
 wb.save(sys.argv[2])
 ```
 
-- `ColorScaleRule`/`DataBarRule` take a range, not a cell; one rule covers the
-  rectangle and scales against the values inside it.
-- `CellIsRule` compares one cell: `operator` in `lessThan`, `greaterThan`,
-  `between`, `equal`, `notEqual`, …
-- `FormulaRule` evaluates a formula with the range's **top-left** cell, so write
-  the reference for that cell (`$F2` with row relative) and Excel fills the rest.
-- A whole-column range (`D:D`) is cheap to write and slow to render; bound the
-  range to the current data (`D2:D13`) and extend it when rows are added.
-- Rules stack in priority order; later rules win only when the earlier ones do
-  not match. `stopIfTrue=True` ends the chain — use it when a second rule must
-  not repaint an already-flagged cell.
-- Do not also set a static fill on the same cells: the static fill shows through
-  where no rule matches and the sheet looks half-formatted.
+- `ColorScaleRule`/`DataBarRule` take a range, not a cell; one rule covers the rectangle and scales against the values inside it.
+- `CellIsRule` compares one cell: `operator` in `lessThan`, `greaterThan`, `between`, `equal`, `notEqual`, …
+- `FormulaRule` evaluates a formula with the range's **top-left** cell, so write the reference for that cell (`$F2` with row relative) and Excel fills the rest.
+- A whole-column range (`D:D`) is cheap to write and slow to render; bound the range to the current data (`D2:D13`) and extend it when rows are added.
+- Rules stack in priority order; later rules win only when the earlier ones do not match. `stopIfTrue=True` ends the chain — use it when a second rule must not repaint an already-flagged cell.
+- Do not also set a static fill on the same cells: the static fill shows through where no rule matches and the sheet looks half-formatted.
 
 ## Editing an existing file
 
-Replace a rule, do not add a near-duplicate: iterate
-`ws.conditional_formatting` and rebuild the collection for that range. Two rules
-covering `D2:D13` with slightly different thresholds give a result nobody can
-explain. Keep the rule count per sheet small — a dashboard with forty rules is a
-compatibility minefield in other engines.
+Replace a rule; do not add a near-duplicate. Iterate `ws.conditional_formatting` and rebuild the collection for that range — two rules covering `D2:D13` with slightly different thresholds give a result nobody can explain. Keep the rule count per sheet small: a dashboard with forty rules is a compatibility minefield in other engines.
 
 ## Verify
 
-Read the file back with `container_tools/inspect_workbook.py`; it lists each
-range and rule type. Then render and look: a data bar that never appears is
-usually a range that does not overlap the data, and a rule that fires on the
-wrong cells is almost always an absolute/relative mistake in `FormulaRule`.
+Read the file back with `container_tools/inspect_workbook.py`; it lists each range and rule type. Then render and look: a data bar that never appears is usually a range that does not overlap the data, and a rule that fires on the wrong cells is almost always an absolute/relative mistake in `FormulaRule`.

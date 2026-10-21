@@ -1,7 +1,5 @@
 # Create a PDF
 
-A new PDF is a set of pages, each holding a content stream plus fonts and resources. Two routes exist here, and both end with the same verification.
-
 ## Fast path: the helper CLI spec
 
 ```bash
@@ -27,7 +25,7 @@ Blocks: `title`, `heading` (`level` 1–2), `paragraph`, `quote`, `bullets`, `nu
 
 ## Direct path: reportlab
 
-Reach for reportlab when the layout does not fit the block model — columns, absolute placement, custom rules, rotated text.
+Reach for reportlab when the layout does not fit the block model: columns, absolute placement, custom rules, rotated text.
 
 ```bash
 "<python>" - <<'PY'
@@ -50,26 +48,25 @@ c.save()
 PY
 ```
 
-`drawString` takes a baseline point measured from the bottom-left corner, not the top. Convert top-down coordinates once (for a page height `h`, baseline `y = h - top - font_size`), or every following measurement will drift.
+`drawString` takes a baseline point measured from the bottom-left corner, not the top. Convert top-down coordinates once (for a page height `h`, baseline `y = h - top - font_size`), or every later measurement drifts.
 
 ## Fonts
 
-Base-14 fonts (`Helvetica`, `Times-Roman`, `Courier`) need no embedding and cover Latin text. Non-Latin text needs a real font file registered with `pdfmetrics.registerFont(TTFont("Body", "<path>.ttf"))`; a font that cannot render a glyph produces a blank box in the output, which the render step will show. The CLI tries the first available CJK system font, and says so when none exists.
+Base-14 fonts (`Helvetica`, `Times-Roman`, `Courier`) need no embedding and cover Latin text. Non-Latin text needs a real font file registered with `pdfmetrics.registerFont(TTFont("Body", "<path>.ttf"))`; a font that cannot render a glyph produces a blank box, which the render step shows. The CLI tries the first available CJK system font and says so when none exists.
 
 ## Quality rules
 
-- One heading scale, one body size, one margin system per document.
 - Keep body text inside 12–16 pt leading; below 9 pt text becomes unreliable on print.
 - ASCII hyphens only in prose; do not paste typographic dashes into generated copy unless the source used them.
 - Give every page a consistent header/footer treatment, or none at all.
-- Do not put a table wider than the text column; wrap long cell text instead of letting it clip.
+- Full layout checklist: `references/layout-quality.md`.
 
 ## Verify
 
-Render and look at every page; a created PDF has no text layer surprises, so problems are layout problems: text past the margin, blocks overlapping, table columns squeezed, a `page_break` landing on an empty page, or a CJK line silently blank.
+Render every page: a created PDF has no text-layer surprises, so problems are layout problems — text past the margin, blocks overlapping, table columns squeezed, a `page_break` landing on an empty page, a CJK line silently blank.
 
 ```bash
 "<python>" "<cli>" pdf render --input "out.pdf" --out-dir "render" --dpi 110
 ```
 
-Then confirm the structure you intended with `"<python>" "<cli>" pdf read --input "out.pdf"` (page count and per-page text) before `present`.
+Then confirm the page count and per-page text with `"<python>" "<cli>" pdf read --input "out.pdf"` before `present`.

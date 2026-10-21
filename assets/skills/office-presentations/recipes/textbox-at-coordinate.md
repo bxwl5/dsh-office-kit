@@ -7,10 +7,10 @@ what you see:
 
 - `left`/`top` are the **top-left corner** of the frame, not of the glyphs. A
   28 pt line has roughly 4 pt of space above the cap height inside its frame.
-- `width` is the wrap width. `word_wrap = True` must be set explicitly on a new
-  box or long lines run past the slide edge instead of wrapping.
+- `width` is the wrap width. Set `word_wrap = True` explicitly on a new box or
+  long lines run past the slide edge instead of wrapping.
 - `height` is the *frame*, not the content: PowerPoint lets text spill below it
-  (which overlaps whatever is under the box) unless autosize is turned on.
+  (overlapping whatever is under the box) unless autosize is on.
 - Interior margins default to 0.1 in left/right and 0.05 in top/bottom. Setting
   them to 0 makes the rect mean exactly what you measured.
 
@@ -44,10 +44,10 @@ PY
 
 ## Measuring before you place
 
-Do not guess whether the text fits — compute it. A line of 28 pt text fits
-about `width_in * 96 / (0.55 * 28)` characters (0.55 average advance for a
-humanist sans), and each line needs `1.2 * 28 / 72` inches of height. Leave the
-estimate in the script, then let the render confirm it.
+Do not guess whether the text fits — compute it. A line of 28 pt text fits about
+`width_in * 96 / (0.55 * 28)` characters (0.55 average advance for a humanist
+sans), and each line needs `1.2 * 28 / 72` inches of height. Leave the estimate
+in the script, then let the render confirm it.
 
 ```python
 def fits(text: str, width_in: float, height_in: float, size_pt: float) -> bool:
@@ -58,8 +58,8 @@ def fits(text: str, width_in: float, height_in: float, size_pt: float) -> bool:
 
 ## Pitfalls this avoids
 
-- A box sized to the text at 18 pt, later edited to 32 pt, now overlaps the
-  table below. Frame height follows the *largest* run, so size text first.
+- A box sized to text at 18 pt, later edited to 32 pt, now overlaps the table
+  below. Frame height follows the *largest* run, so size text first.
 - `add_textbox` with `width=Inches(13.3)` on a 13.333 in slide plus default
   margins = 0.2 in of overflow past the right edge. Subtract the margins.
 - `MSO_ANCHOR.MIDDLE` on a title looks intentional on a cover and wrong on a

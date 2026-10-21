@@ -1,8 +1,6 @@
 # Accessibility
 
-**Goal.** A document a screen reader can navigate: real headings, described images, tables with a header row, no fake emphasis carrying meaning.
-
-The accessibility tree in Word comes from structure, not appearance. Bold text announces as bold; a `Heading 1` announces as a heading and appears in the navigation pane. Alt text lives in `wp:docPr @descr`.
+Accessibility comes from structure, not appearance: bold announces as bold, `Heading 1` announces as a heading and appears in the navigation pane. Alt text lives in `wp:docPr @descr`.
 
 ## Audit
 
@@ -10,36 +8,32 @@ The accessibility tree in Word comes from structure, not appearance. Bold text a
 "<python>" "<skill>/scripts/a11y_audit.py" "<file.docx>" --out_json "<report.json>"
 ```
 
-Checks: images without a description or title, tables without a repeating header row, heading levels that jump, empty headings, links whose text is only "click here" / "here" / "link", and a missing core title.
+Checks images without description or title, tables without a repeating header row, heading levels that jump, empty headings, link text that is only "click here", "here" or "link", and a missing core title. Exit 1 means at least one finding.
 
-Exit code 1 means at least one finding; `--out_json` writes the same report for a larger pass.
-
-## Fix the mechanical parts
+## Mechanical fixes
 
 ```bash
-"<python>" "<skill>/scripts/a11y_audit.py" "<file.docx>" \
-  --fix_image_alt from_filename --fix_table_headers first_row \
-  --out "<file-a11y.docx>"
+"<python>" "<skill>/scripts/a11y_audit.py" "<file.docx>" --fix_image_alt from_filename --fix_table_headers first_row --out "<file-a11y.docx"
 ```
 
-Both fixes are honest placeholders: the file name as alt text is better than an empty description, and a header row that repeats across pages helps a reader who lands mid-table. Neither substitutes for real text.
+These are honest placeholders, not substitutes for real text.
 
-## Fix the parts that need judgement
+## Judgement fixes
 
-- **Alt text.** Describe what the reader would lose without the picture: "Bar chart: revenue by region, EMEA 4.1M ahead of APAC 3.2M." Decorative rules and dividers get an empty description.
-- **Link text.** "Download the Q2 ledger" instead of "click here".
-- **Reading order.** Decorative text boxes and floating images insert themselves at awkward places in the reading order; convert to inline if the flow matters.
-- **Colour.** Meaning carried only by colour (red = bad) fails for a colour-blind reader; add a word.
-- **Tables for layout.** A layout table announces as a data table. Restructure into paragraphs if the content is not tabular.
+- **Alt text** describes what the reader loses, e.g. "Bar chart: revenue by region, EMEA 4.1M ahead of APAC 3.2M". Decorative rules and dividers get an empty description.
+- **Link text** names the destination: "Download the Q2 ledger", not "click here".
+- **Reading order:** decorative text boxes and floating images land awkwardly; convert them to inline.
+- **Colour alone** (red = bad) fails colour-blind readers; add a word.
+- **Layout tables** announce as data tables; restructure them as paragraphs.
 
-Long documents also want a TOC (`tasks/toc_workflow.md`), which is the screen-reader equivalent of the navigation pane, and language tags so a screen reader pronounces correctly.
+Longer documents also want a TOC (`tasks/toc_workflow.md`) and language tags.
 
 ## Verify
 
-Re-run the audit to zero findings, then render and read the page: heading hierarchy visible, alt text is not visible (it is metadata), table header row distinct. If a screen reader is available, open the document and navigate by heading — that is the true test.
+Re-run the audit to zero findings and render. Heading hierarchy is visible; alt text is metadata and stays invisible; the header row must be distinct. With a screen reader available, navigate by heading.
 
 ## Pitfalls
 
-- Alt text on a decorative image is worse than none; an empty description plus `title` marks it decorative.
-- A table header row is `w:tblHeader` on the row, not a bold first row.
-- Images inside a table cell still need descriptions.
+- Alt text on a decorative image is worse than none: use an empty description plus `title` to mark it decorative.
+- A header row is `w:tblHeader` on the row, not a bold first row.
+- Images inside table cells still need descriptions.

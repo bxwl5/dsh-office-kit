@@ -5,14 +5,14 @@ The mechanics are the same as any deck; the failure modes are specific.
 ## What a finance audience checks first
 
 1. Does the total add up? A slide whose numbers do not sum loses the argument
-   before the argument starts. Run the arithmetic gate on every declared total.
+   before it starts. Run the arithmetic gate on every declared total.
 2. Is the period stated? "Revenue up 12%" without a base period is not a claim.
-3. Is the unit stated? Thousands, millions, currency, and whether it is gross or
-   net. Put it in the header, once.
-4. Is the comparison like-for-like? Full quarter against full quarter; do not
-   put a 13-week quarter beside a 12-week one without saying so.
-5. Does the chart axis start at zero? For bars, yes, always — a truncated bar
-   chart in a finance deck reads as manipulation even when it is not.
+3. Is the unit stated? Thousands, millions, currency, gross or net. Put it in the
+   header, once.
+4. Is the comparison like-for-like? Full quarter against full quarter; do not put
+   a 13-week quarter beside a 12-week one without saying so.
+5. Does the chart axis start at zero? For bars, always — a truncated bar chart in
+   a finance deck reads as manipulation even when it is not.
 
 ## The financial slide kit
 
@@ -30,11 +30,11 @@ The mechanics are the same as any deck; the failure modes are specific.
 - Two significant figures is usually enough for a headline (`£2.4m`, not
   `£2,384,117`). Keep full precision in the appendix table.
 - Percentages: one decimal at most, and say what they are a percentage *of*.
-- Round consistently: if the headline says 2.4m, the table should not say
-  2.38m in one row and 2.4m in the next.
-- Negative numbers: use a minus sign consistently (`−12%`) and keep
-  parentheses for tables where accounting convention is expected.
-- A variance is meaningless without its sign and its direction; state whether
+- Round consistently: if the headline says 2.4m, the table should not say 2.38m
+  in one row and 2.4m in the next.
+- Negative numbers: one minus sign convention (`−12%`), parentheses kept for
+  tables where accounting convention is expected.
+- A variance is meaningless without its sign and direction; state whether
   favourable is up or down (revenue vs cost).
 
 ## Charts that survive a CFO
@@ -45,14 +45,14 @@ The mechanics are the same as any deck; the failure modes are specific.
 - One series per chart unless the comparison *is* the point.
 - Do not chart a table of six numbers; the table is more honest and faster to
   read.
-- Forecast periods are visually distinct (lighter fill, dashed line) and named
-  in the caption.
+- Forecast periods are visually distinct (lighter fill, dashed line) and named in
+  the caption.
 
 ## Provenance
 
 Every non-obvious number gets a note with: source file or system, extraction
-date, period covered, and any adjustment made. The speaker notes are the right
-place; a footnote-heavy slide is a slide nobody reads.
+date, period covered, any adjustment made. The speaker notes are the right place;
+a footnote-heavy slide is a slide nobody reads.
 
 ## Check before delivery
 

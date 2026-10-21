@@ -8,24 +8,21 @@ A bullet is a claim, not a label. Two forms work:
   cost, not the pick."
 - **Number + meaning**: "12 minutes per order lost to aisle travel."
 
-Forms that do not work: a single noun ("Efficiency"), a truncated clause
-("Picking accounts for…"), a list of three adjectives, or a bullet that restates
-the slide title.
+Forms that fail: a single noun ("Efficiency"), a truncated clause ("Picking
+accounts for…"), three adjectives in a row, or a bullet that restates the slide
+title.
 
 ## Length and count
 
 - One line, two at the absolute maximum, per bullet on a 16:9 slide.
 - Three to five bullets. Six is a signal to split; eight is a document.
-- No sub-sub-bullets. If a bullet needs a child, the parent was a section.
+- No sub-sub-bullets. A bullet needing a child means the parent was a section.
 - Keep bullets grammatically parallel: all sentences, or all noun phrases.
 
 ## Native bullet glyphs
 
-Bullets in PowerPoint are paragraph properties, not characters. A bullet
-character typed into the text ("• Picking…") is a bullet that cannot re-indent,
-cannot change level, and looks different from every other bullet in the deck.
-
-Set them properly:
+Bullets are paragraph properties, not characters. A typed bullet ("• Picking…")
+cannot re-indent, cannot change level, and looks unlike every other bullet.
 
 ```python
 "<python>" - <<'PY'
@@ -64,15 +61,14 @@ print("bullets:", len(frame.paragraphs))
 PY
 ```
 
-The `marL`/`indent` pair is what pulls the second line of a wrapped bullet under
-the text instead of under the glyph — the most common "malformed bullet" defect
-in generated decks.
+The `marL`/`indent` pair pulls a wrapped bullet's second line under the text
+instead of under the glyph — the most common "malformed bullet" defect in
+generated decks.
 
 ## Anti-patterns
 
-- Bullets as a script: a slide is not a transcript, the speaker notes are.
-- Fake bullets via "– " or "→ " prefixes in the text; they do not indent.
-- Six bullets of equal weight where one is the actual point. Make the point the
-  title and the bullets the evidence.
-- Numbered lists where the order does not matter, and bullet lists where it
-  does.
+- Bullets as a script: a slide is not a transcript; the speaker notes are.
+- Fake bullets via "– " or "→ " prefixes; they do not indent.
+- Six bullets of equal weight where one is the point. Make the point the title,
+  the bullets the evidence.
+- Numbered lists where order does not matter, bullets where it does.

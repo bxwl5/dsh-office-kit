@@ -1,7 +1,6 @@
 # Finalization checklist
 
-Run this before `present`. It exists because every item on it has shipped a
-broken deck at least once.
+Run this before `present`. Every item has shipped a broken deck at least once.
 
 ## The file
 
@@ -12,19 +11,18 @@ broken deck at least once.
 - [ ] Slide count matches the intent; nothing left over from an earlier draft.
 - [ ] Core properties set:
       `"<python>" "<skill>/container_tools/core_properties.py" --input deck.pptx --title "..." --author "..."`
-      (an untitled deck shows up as "PowerPoint Presentation" in every file list).
+      (an untitled deck shows as "PowerPoint Presentation" in every file list).
 
 ## The content
 
-- [ ] Every placeholder is filled or deleted — no "Click to add text".
+- [ ] Every placeholder filled or deleted — no "Click to add text".
 - [ ] No default chart title ("Chart Title") survives:
       `"<python>" "<skill>/container_tools/native_chart_title_gate.py" --input deck.pptx`.
 - [ ] Totals are arithmetic:
       `"<python>" "<skill>/container_tools/native_table_arithmetic_gate.py" --input deck.pptx --contracts totals.json`.
 - [ ] Charts have their data in the file (portable mode passes) and categories
       are in a meaningful order.
-- [ ] Numbers in the deck agree with the numbers in the source data, at the
-      precision shown.
+- [ ] Numbers in the deck agree with the source data at the precision shown.
 - [ ] Speaker notes carry the provenance of the non-obvious numbers.
 
 ## The layout
@@ -34,7 +32,7 @@ broken deck at least once.
       → `passed: true`; review findings read and consciously accepted.
 - [ ] Nothing outside the slide edge, nothing overlapping the footer zone.
 - [ ] Titles are one or two lines; no title ends in a full stop.
-- [ ] Body text is at least 18 pt, captions at least 12 pt.
+- [ ] Body text at least 18 pt, captions at least 12 pt.
 - [ ] One idea per slide, one emphasis per paragraph.
 
 ## The look
@@ -46,7 +44,7 @@ broken deck at least once.
 - [ ] Text is not clipped, ellipsised or shrunk to illegibility.
 - [ ] Photographs are not stretched; their sources are listed.
 - [ ] Charts read at thumbnail size: the point is visible before any label.
-- [ ] The cover and closing slide both say something.
+- [ ] Cover and closing slide both say something.
 
 ## Delivery
 
@@ -57,7 +55,7 @@ broken deck at least once.
 
 ## When rendering is unavailable
 
-`render_slides.py --engine draft` draws a geometry preview with PyMuPDF when no
-office suite is installed. It is honest about being approximate: type is drawn
-at declared sizes in a substitute face, and layout chrome is not rendered. Use
-it to catch overlap, overflow and placement — not to judge typography.
+`render_slides.py --engine draft` draws a PyMuPDF geometry preview when no office
+suite is installed. Type is drawn at declared sizes in a substitute face and
+layout chrome is not rendered. Use it to catch overlap, overflow and placement —
+not to judge typography.

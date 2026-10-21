@@ -25,8 +25,8 @@ Exit code `0` means the files match at the requested level, `1` means difference
 
 Run it as `--before original --after original-edited` immediately after any edit, and read the "changed" sections as the diff you are about to describe to the user:
 
-1. Anything under cells that you did not intend to touch is collateral damage — revert and redo with a narrower edit.
-2. A sheet, table, name, or chart in "removed" is a lost object; rebuild it from `recipes/charts.md` / `recipes/named-ranges.md` before presenting.
+1. Cells you did not intend to touch are collateral damage — revert and redo with a narrower edit.
+2. A sheet, table, name, or chart under "removed" is a lost object; rebuild it from `recipes/charts.md` / `recipes/named-ranges.md` before presenting.
 3. Formatting-only differences across many rows usually mean a style object was reapplied to a range instead of a cell.
 
 Diffing a file against itself is a useful sanity check that the tool and the file load cleanly: it should return `identical: true`.
