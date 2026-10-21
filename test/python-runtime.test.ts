@@ -1,5 +1,6 @@
 import type { PythonInspection, RuntimeStatus } from '../src/python'
 import { homedir } from 'node:os'
+import { join } from 'node:path'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
 import {
@@ -110,6 +111,8 @@ describe('paths and remedy', () => {
     const python = venvPython(paths.venv)
     expect(python).not.toBe(paths.venv)
     expect(python.startsWith(paths.venv)).toBe(true)
-    expect(python.endsWith(process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')).toBe(true)
+    // Build the expectation with join: on Windows the separator is a backslash, so a
+    // literal 'Scripts/python.exe' never matches the joined path.
+    expect(python.endsWith(join('Scripts', 'python.exe')) || python.endsWith(join('bin', 'python'))).toBe(true)
   })
 })
