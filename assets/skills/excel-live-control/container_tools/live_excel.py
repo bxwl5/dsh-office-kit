@@ -605,6 +605,15 @@ def main() -> int:
     except ToolError as error:
         return emit(failure_payload(op, error), 2)
 
+    # macOS and Linux ship pwsh but no COM, and `shutil.which('powershell')` can find
+    # that binary; fail on the platform instead of surfacing a cryptic attach error.
+    if sys.platform != "win32":
+        return emit(failure_payload(op, ToolError(
+            "Excel/WPS live control drives the application through Windows PowerShell 5.1 "
+            "COM, which only exists on Windows",
+            "powershell",
+        )), 3)
+
     request = {
         "op": op,
         "launch_hidden": bool(getattr(args, "launch_hidden", False)),
